@@ -1,3 +1,4 @@
 .env
 .venv_adsadmin_panel
 /admin_panel/__pycache__
+logs

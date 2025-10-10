@@ -422,7 +422,7 @@ class DocumentService:
             # Verificar mínimo de cartas (3)
             result['hasMinimumCartas'] = result['cartasCount'] >= 3
         
-            # Verificar si está completo (incluye título ahora 🔥)
+            # Verificar si está completo 
             result['isComplete'] = (
                 result['hasHojaVida'] and 
                 result['hasAntecedentes'] and 

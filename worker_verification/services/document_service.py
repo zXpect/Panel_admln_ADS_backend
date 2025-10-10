@@ -373,53 +373,63 @@ class DocumentService:
     def has_all_required_documents(self, worker_id):
         """
         Verifica si un trabajador tiene todos los documentos obligatorios
+    
+    Args:
+        worker_id (str): ID del trabajador
         
-        Args:
-            worker_id (str): ID del trabajador
-            
-        Returns:
-            dict: Estado de documentos requeridos
-        """
+    Returns:
+        dict: Estado de documentos requeridos
+    """
         try:
             documents = self.get_all_worker_documents(worker_id)
-            
+        
             result = {
-                'hasHojaVida': False,
-                'hasAntecedentes': False,
-                'cartasCount': 0,
-                'hasMinimumCartas': False,
-                'isComplete': False
-            }
-            
+            'hasHojaVida': False,
+            'hasAntecedentes': False,
+            'hasTitulo': False,
+            'cartasCount': 0,
+            'hasMinimumCartas': False,
+            'isComplete': False
+        }
+        
             if not documents:
                 return result
-            
+        
             # Verificar hoja de vida
             if self.CATEGORY_HOJA_VIDA in documents:
                 result['hasHojaVida'] = True
-            
+        
             # Verificar antecedentes
             if self.CATEGORY_ANTECEDENTES in documents:
                 result['hasAntecedentes'] = True
-            
-            # Contar cartas de recomendación
+        
+            # Verificar certificaciones (títulos y cartas)
             if self.CATEGORY_CERTIFICACIONES in documents:
                 certificaciones = documents[self.CATEGORY_CERTIFICACIONES]
+            
+                # Títulos
+                if self.SUBCATEGORY_TITULOS in certificaciones:
+                    titulos = certificaciones[self.SUBCATEGORY_TITULOS]
+                    if isinstance(titulos, dict) and len(titulos) > 0:
+                        result['hasTitulo'] = True
+            
+                #  Cartas de recomendación
                 if self.SUBCATEGORY_CARTAS in certificaciones:
                     cartas = certificaciones[self.SUBCATEGORY_CARTAS]
                     if isinstance(cartas, dict):
                         result['cartasCount'] = len(cartas)
-            
+        
             # Verificar mínimo de cartas (3)
             result['hasMinimumCartas'] = result['cartasCount'] >= 3
-            
-            # Verificar si está completo
+        
+            # Verificar si está completo (incluye título ahora 🔥)
             result['isComplete'] = (
                 result['hasHojaVida'] and 
                 result['hasAntecedentes'] and 
+                result['hasTitulo'] and
                 result['hasMinimumCartas']
             )
-            
+        
             logger.info(f"Document verification for worker {worker_id}: {result}")
             return result
         except Exception as e:

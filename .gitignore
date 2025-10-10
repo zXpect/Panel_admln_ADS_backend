@@ -3,3 +3,5 @@
 /admin_panel/__pycache__
 logs
 serviceAccountKey.json
+worker_verification/services/__pycache__
+worker_verification/__pycache__

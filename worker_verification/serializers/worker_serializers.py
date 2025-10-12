@@ -2,19 +2,14 @@ from rest_framework import serializers
 
 
 class WorkerSerializer(serializers.Serializer):
-    """
-    Serializer para trabajadores
-    """
     id = serializers.CharField(read_only=True)
-    name = serializers.CharField(max_length=100)
-    lastName = serializers.CharField(max_length=100)
-    email = serializers.EmailField()
-    work = serializers.CharField(max_length=100)
+    name = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
+    lastName = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    work = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
     fcmToken = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     isAvailable = serializers.BooleanField(default=True)
     isOnline = serializers.BooleanField(default=False)
-    
-    # Campos adicionales
     image = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -24,8 +19,8 @@ class WorkerSerializer(serializers.Serializer):
     totalRatings = serializers.IntegerField(required=False, default=0)
     pricePerHour = serializers.FloatField(required=False, default=0.0)
     experience = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    timestamp = serializers.IntegerField(required=False)
-    
+    timestamp = serializers.IntegerField(required=False, allow_null=True)
+
     def validate_rating(self, value):
         """Valida que el rating esté entre 0 y 5"""
         if value < 0 or value > 5:

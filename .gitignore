@@ -1,3 +1,19 @@
+# Entornos virtuales
+.venv_adsadmin_panel/
+
+# Archivos de configuración sensibles
 .env
-.venv_adsadmin_panel
-/admin_panel/__pycache__
+serviceAccountKey.json
+
+# Base de datos local
+db.sqlite3
+
+# Logs
+logs/
+
+# Cachés de Python
+__pycache__/
+*/__pycache__/
+
+# Migraciones de Django
+worker_verification/migrations/

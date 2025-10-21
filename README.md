@@ -2,7 +2,7 @@
 
 Panel de administración para gestión y verificación de trabajadores, documentos y clientes utilizando Django REST Framework y Firebase.
 
-## 📋 Tabla de Contenidos
+## Tabla de Contenidos
 
 - [Características](#características)
 - [Tecnologías](#tecnologías)
@@ -18,7 +18,7 @@ Panel de administración para gestión y verificación de trabajadores, document
 - [Logging](#logging)
 - [Contribuir](#contribuir)
 
-## ✨ Características
+## Características
 
 - 🔐 Autenticación JWT con Simple JWT
 - 👷 Gestión completa de trabajadores
@@ -30,7 +30,7 @@ Panel de administración para gestión y verificación de trabajadores, document
 - 📝 Logging detallado
 - ✅ Validación de datos con serializers
 
-## 🛠 Tecnologías
+## Tecnologías
 
 - **Backend**: Django 5.0, Django REST Framework
 - **Base de Datos**: Firebase Realtime Database
@@ -39,14 +39,14 @@ Panel de administración para gestión y verificación de trabajadores, document
 - **Base de Datos Local**: SQLite (para usuarios de Django)
 - **Lenguaje**: Python 3.x
 
-## 📦 Requisitos Previos
+## Requisitos Previos
 
 - Python 3.8 o superior
 - pip (gestor de paquetes de Python)
 - Cuenta de Firebase con proyecto configurado
 - Credenciales de Firebase (archivo JSON)
 
-## 🚀 Instalación
+## Instalación
 
 ### 1. Clonar el repositorio
 
@@ -96,7 +96,7 @@ python manage.py migrate
 python manage.py createsuperuser
 ```
 
-## ⚙️ Configuración
+## Configuración
 
 ### 1. Variables de Entorno
 
@@ -170,7 +170,7 @@ Firebase Realtime Database:
                 └── {cartaId}/
 ```
 
-## 🎯 Uso
+## Uso
 
 ### Iniciar servidor de desarrollo
 
@@ -187,7 +187,7 @@ URL: http://localhost:8000/admin/
 Usuario: (el creado con createsuperuser)
 ```
 
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Autenticación
 
@@ -572,7 +572,7 @@ Response:
 }
 ```
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 admin_panel/
@@ -616,7 +616,7 @@ admin_panel/
 └── README.md
 ```
 
-## 📊 Modelos de Datos
+## Modelos de Datos
 
 ### VerificationLog
 
@@ -646,7 +646,7 @@ Almacena configuraciones del sistema.
 }
 ```
 
-## 🔧 Servicios
+## Servicios
 
 ### FirebaseService
 
@@ -679,7 +679,7 @@ Administra operaciones de clientes:
 - Obtención de detalles
 - Conteo
 
-## 🔒 Seguridad
+## Seguridad
 
 ### Autenticación JWT
 
@@ -701,7 +701,7 @@ Configurado para aceptar peticiones desde:
 - Validación de datos con serializers
 - Sanitización de inputs
 
-## 📝 Logging
+## Logging
 
 El sistema registra eventos en:
 
@@ -719,7 +719,7 @@ INFO 2025-01-20 10:30:45 worker_service Retrieved 100 workers
 ERROR 2025-01-20 10:31:12 document_service Error approving document: File not found
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Ejecutar tests
@@ -730,7 +730,7 @@ coverage run --source='.' manage.py test
 coverage report
 ```
 
-## 📚 Documentación Adicional
+## Documentación Adicional
 
 ### Reglas de Documentos Requeridos
 
@@ -751,7 +751,7 @@ Un trabajador está **completamente verificado** cuando:
 - `approved`: Trabajador verificado y aprobado
 - `rejected`: Trabajador rechazado
 
-## 🐛 Solución de Problemas
+## Solución de Problemas
 
 ### Error: Firebase no inicializa
 
@@ -765,11 +765,11 @@ Un trabajador está **completamente verificado** cuando:
 
 **Solución**: Refrescar el token usando `/api/auth/token/refresh/`
 
-## 📄 Licencia
+## Licencia
 
 Este proyecto es privado y confidencial.
 
-## 👥 Contribuir
+## Contribuir
 
 1. Fork el proyecto
 2. Crear rama de feature (`git checkout -b feature/AmazingFeature`)
@@ -777,7 +777,7 @@ Este proyecto es privado y confidencial.
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abrir Pull Request
 
-## 📧 Contacto
+## Contacto
 
 Para soporte o consultas, contactar al equipo de desarrollo.
 

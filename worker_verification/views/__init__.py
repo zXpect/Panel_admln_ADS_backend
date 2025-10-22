@@ -4,7 +4,8 @@ from .client_views import ClientViewSet
 from .dashboard_views import (
     DashboardStatsView,
     DashboardWeeklyTrendsView,
-    DashboardMonthlyTrendsView
+    DashboardMonthlyTrendsView,
+    DashboardActivityStatsView,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     'DashboardStatsView',
     'DashboardWeeklyTrendsView',
     'DashboardMonthlyTrendsView',
+    'DashboardActivityStatsView', 
 ]

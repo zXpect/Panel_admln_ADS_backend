@@ -7,6 +7,7 @@ from .views import (
     DashboardStatsView,
     DashboardWeeklyTrendsView,
     DashboardMonthlyTrendsView,
+    DashboardActivityStatsView,
 )
 
 # Router para ViewSets
@@ -16,10 +17,17 @@ router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'clients', ClientViewSet, basename='client')
 
 urlpatterns = [
-    # Dashboard
+    # Dashboard - Estadísticas generales
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
+    
+    # Dashboard - Tendencias semanales (últimos 7 días)
     path('dashboard/weekly-trends/', DashboardWeeklyTrendsView.as_view(), name='dashboard-weekly-trends'),
+    
+    # Dashboard - Tendencias mensuales (últimos 30 días)
     path('dashboard/monthly-trends/', DashboardMonthlyTrendsView.as_view(), name='dashboard-monthly-trends'),
+    
+    # Dashboard - Estadísticas de actividad detalladas (NUEVO)
+    path('dashboard/activity-stats/', DashboardActivityStatsView.as_view(), name='dashboard-activity-stats'),
     
     # ViewSets routes
     path('', include(router.urls)),

@@ -29,9 +29,14 @@ class DashboardStatsView(APIView):
             # Obtener total de clientes
             total_clients = client_service.count_clients()
             
-            # Obtener documentos pendientes
+            # Obtener estadísticas de documentos
+            document_stats = document_service.get_documents_statistics()
+            
+            # Obtener estadísticas de actividad detalladas
+            activity_stats = dashboard_service.get_detailed_activity_stats()
+            
+            # Obtener documentos pendientes (para desglose por tipo)
             pending_docs = document_service.get_pending_documents()
-            pending_count = len(pending_docs)
             
             # Agrupar documentos pendientes por tipo
             pending_by_type = {
@@ -41,17 +46,9 @@ class DashboardStatsView(APIView):
                 'cartasRecomendacion': 0
             }
             
-            # NUEVO: Contar trabajadores con documentos pendientes (trabajadores NO verificados)
-            workers_with_pending_docs = set()
-            
             for doc in pending_docs:
                 category = doc.get('category', '')
                 subcategory = doc.get('subcategory', '')
-                worker_id = doc.get('workerId', '')
-                
-                # Agregar trabajador al set de no verificados
-                if worker_id:
-                    workers_with_pending_docs.add(worker_id)
                 
                 if category == 'hojaDeVida':
                     pending_by_type['hojaDeVida'] += 1
@@ -63,47 +60,46 @@ class DashboardStatsView(APIView):
                     elif subcategory == 'cartasRecomendacion':
                         pending_by_type['cartasRecomendacion'] += 1
             
-            # NUEVO: Calcular trabajadores verificados correctamente
-            total_workers = worker_stats['total']
-            workers_not_verified = len(workers_with_pending_docs)
-            workers_verified = max(0, total_workers - workers_not_verified)
-            
             stats = {
                 'workers': {
-                    'total': total_workers,
+                    'total': worker_stats['total'],
+                    'verified': worker_stats['verified'],
                     'available': worker_stats['available'],
                     'online': worker_stats['online'],
-                    'verified': workers_verified,  # NUEVO: Trabajadores verificados
-                    'notVerified': workers_not_verified,  # NUEVO: Trabajadores no verificados
                     'byCategory': worker_stats['by_category']
                 },
                 'clients': {
                     'total': total_clients
                 },
                 'documents': {
-                    'pendingTotal': pending_count,
+                    'total': document_stats['total'],
+                    'pending': document_stats['pending'],
+                    'approved': document_stats['approved'],
+                    'rejected': document_stats['rejected'],
+                    'processed': document_stats['processed'],
                     'pendingByType': pending_by_type
-                }
+                },
+                'activity': activity_stats  # Nuevas estadísticas de actividad
             }
             
-            logger.info(f"Dashboard stats calculated: {workers_verified} verified workers out of {total_workers}")
-            
+            logger.info("Estadísticas del dashboard obtenidas exitosamente")
             return Response({
                 'success': True,
                 'data': stats
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
-            logger.error(f"Error getting dashboard stats: {str(e)}", exc_info=True)
+            logger.error(f"Error obteniendo estadísticas del dashboard: {str(e)}", exc_info=True)
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'Error al obtener estadísticas del dashboard',
+                'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class DashboardWeeklyTrendsView(APIView):
     """
-    Vista para obtener tendencias semanales
+    Vista para obtener tendencias semanales mejoradas
     """
     permission_classes = [IsAuthenticated]
     
@@ -113,28 +109,53 @@ class DashboardWeeklyTrendsView(APIView):
         Obtiene tendencias de los últimos 7 días
         
         Retorna:
-        - Trabajadores en línea por día
+        - Trabajadores activos por día
         - Documentos procesados por día
+        - Documentos subidos por día
         """
         try:
             trends = dashboard_service.get_weekly_trends()
             
+            # Calcular métricas adicionales
+            total_workers = sum(day['workers'] for day in trends)
+            total_docs_processed = sum(day['documents'] for day in trends)
+            total_docs_uploaded = sum(day['documentsUploaded'] for day in trends)
+            
+            avg_workers = total_workers / len(trends) if trends else 0
+            avg_docs_processed = total_docs_processed / len(trends) if trends else 0
+            avg_docs_uploaded = total_docs_uploaded / len(trends) if trends else 0
+            
+            response_data = {
+                'trends': trends,
+                'summary': {
+                    'totalWorkersActive': total_workers,
+                    'totalDocsProcessed': total_docs_processed,
+                    'totalDocsUploaded': total_docs_uploaded,
+                    'avgWorkersPerDay': round(avg_workers, 1),
+                    'avgDocsProcessedPerDay': round(avg_docs_processed, 1),
+                    'avgDocsUploadedPerDay': round(avg_docs_uploaded, 1),
+                    'period': '7 días'
+                }
+            }
+            
+            logger.info(f"Tendencias semanales obtenidas: {len(trends)} días")
             return Response({
                 'success': True,
-                'data': trends
+                'data': response_data
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
-            logger.error(f"Error getting weekly trends: {str(e)}", exc_info=True)
+            logger.error(f"Error obteniendo tendencias semanales: {str(e)}", exc_info=True)
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'Error al obtener tendencias semanales',
+                'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class DashboardMonthlyTrendsView(APIView):
     """
-    Vista para obtener tendencias mensuales
+    Vista para obtener tendencias mensuales mejoradas
     """
     permission_classes = [IsAuthenticated]
     
@@ -146,14 +167,77 @@ class DashboardMonthlyTrendsView(APIView):
         try:
             trends = dashboard_service.get_monthly_trends()
             
+            # Calcular métricas adicionales
+            total_workers = sum(week['workers'] for week in trends)
+            total_docs_processed = sum(week['documents'] for week in trends)
+            total_docs_uploaded = sum(week['documentsUploaded'] for week in trends)
+            
+            avg_workers = total_workers / len(trends) if trends else 0
+            avg_docs_processed = total_docs_processed / len(trends) if trends else 0
+            avg_docs_uploaded = total_docs_uploaded / len(trends) if trends else 0
+            
+            # Encontrar semana con mayor actividad
+            peak_week = max(trends, key=lambda x: x['workers'] + x['documents']) if trends else None
+            
+            response_data = {
+                'trends': trends,
+                'summary': {
+                    'totalWorkersActive': total_workers,
+                    'totalDocsProcessed': total_docs_processed,
+                    'totalDocsUploaded': total_docs_uploaded,
+                    'avgWorkersPerWeek': round(avg_workers, 1),
+                    'avgDocsProcessedPerWeek': round(avg_docs_processed, 1),
+                    'avgDocsUploadedPerWeek': round(avg_docs_uploaded, 1),
+                    'peakWeek': peak_week['week'] if peak_week else None,
+                    'period': '30 días'
+                }
+            }
+            
+            logger.info(f"Tendencias mensuales obtenidas: {len(trends)} semanas")
             return Response({
                 'success': True,
-                'data': trends
+                'data': response_data
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
-            logger.error(f"Error getting monthly trends: {str(e)}", exc_info=True)
+            logger.error(f"Error obteniendo tendencias mensuales: {str(e)}", exc_info=True)
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'Error al obtener tendencias mensuales',
+                'details': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class DashboardActivityStatsView(APIView):
+    """
+    Vista para obtener estadísticas detalladas de actividad
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """
+        GET /api/dashboard/activity-stats/
+        Obtiene estadísticas de actividad en diferentes períodos
+        """
+        try:
+            stats = dashboard_service.get_detailed_activity_stats()
+            
+            if not stats:
+                return Response({
+                    'success': False,
+                    'error': 'No se pudieron obtener estadísticas de actividad'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+            logger.info("Estadísticas de actividad obtenidas exitosamente")
+            return Response({
+                'success': True,
+                'data': stats
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas de actividad: {str(e)}", exc_info=True)
+            return Response({
+                'success': False,
+                'error': 'Error al obtener estadísticas de actividad',
+                'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -388,6 +388,33 @@ class WorkerService:
             logger.error(f"Error counting workers: {str(e)}")
             raise
     
+    def count_verified_workers(self):
+        """
+        Cuenta los trabajadores verificados (con verificationStatus.status == 'approved')
+        
+        Returns:
+            int: Total de trabajadores verificados
+        """
+        try:
+            all_workers = self.get_all_workers()
+            
+            if not all_workers:
+                return 0
+            
+            verified_count = 0
+            for worker in all_workers:
+                verification_status = worker.get('verificationStatus', {})
+                if isinstance(verification_status, dict):
+                    status = verification_status.get('status', '')
+                    if status == 'approved':
+                        verified_count += 1
+            
+            logger.info(f"Total verified workers: {verified_count}")
+            return verified_count
+        except Exception as e:
+            logger.error(f"Error counting verified workers: {str(e)}")
+            raise
+    
     def get_workers_statistics(self):
         """
         Obtiene estadísticas generales de trabajadores
@@ -403,6 +430,7 @@ class WorkerService:
                     'total': 0,
                     'available': 0,
                     'online': 0,
+                    'verified': 0,
                     'by_category': {}
                 }
             
@@ -410,6 +438,7 @@ class WorkerService:
                 'total': len(all_workers),
                 'available': 0,
                 'online': 0,
+                'verified': 0,
                 'by_category': {}
             }
             
@@ -421,6 +450,12 @@ class WorkerService:
                 # Contar en línea
                 if worker.get('isOnline', False):
                     stats['online'] += 1
+                
+                # Contar verificados
+                verification_status = worker.get('verificationStatus', {})
+                if isinstance(verification_status, dict):
+                    if verification_status.get('status') == 'approved':
+                        stats['verified'] += 1
                 
                 # Contar por categoría
                 category = worker.get('work', 'Sin categoría')

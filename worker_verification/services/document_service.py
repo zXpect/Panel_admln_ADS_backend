@@ -370,6 +370,172 @@ class DocumentService:
             logger.error(f"Error getting pending documents: {str(e)}")
             raise
     
+    def count_processed_documents(self):
+        """
+        Cuenta los documentos procesados (aprobados + rechazados)
+        
+        Returns:
+            int: Total de documentos procesados
+        """
+        try:
+            all_docs = self.firebase.get_data(self.DOCUMENTS_PATH)
+            
+            if not all_docs:
+                return 0
+            
+            processed_count = 0
+            
+            # Iterar por cada trabajador
+            for worker_id, worker_docs in all_docs.items():
+                # Revisar hoja de vida
+                if self.CATEGORY_HOJA_VIDA in worker_docs:
+                    hoja_vida = worker_docs[self.CATEGORY_HOJA_VIDA]
+                    if isinstance(hoja_vida, dict):
+                        status = hoja_vida.get('status', '')
+                        if status in [self.STATUS_APPROVED, self.STATUS_REJECTED]:
+                            processed_count += 1
+                
+                # Revisar antecedentes
+                if self.CATEGORY_ANTECEDENTES in worker_docs:
+                    antecedentes = worker_docs[self.CATEGORY_ANTECEDENTES]
+                    if isinstance(antecedentes, dict):
+                        status = antecedentes.get('status', '')
+                        if status in [self.STATUS_APPROVED, self.STATUS_REJECTED]:
+                            processed_count += 1
+                
+                # Revisar certificaciones
+                if self.CATEGORY_CERTIFICACIONES in worker_docs:
+                    certificaciones = worker_docs[self.CATEGORY_CERTIFICACIONES]
+                    
+                    # Revisar títulos
+                    if self.SUBCATEGORY_TITULOS in certificaciones:
+                        titulos = certificaciones[self.SUBCATEGORY_TITULOS]
+                        if isinstance(titulos, dict):
+                            for titulo_id, titulo in titulos.items():
+                                if isinstance(titulo, dict):
+                                    status = titulo.get('status', '')
+                                    if status in [self.STATUS_APPROVED, self.STATUS_REJECTED]:
+                                        processed_count += 1
+                    
+                    # Revisar cartas
+                    if self.SUBCATEGORY_CARTAS in certificaciones:
+                        cartas = certificaciones[self.SUBCATEGORY_CARTAS]
+                        if isinstance(cartas, dict):
+                            for carta_id, carta in cartas.items():
+                                if isinstance(carta, dict):
+                                    status = carta.get('status', '')
+                                    if status in [self.STATUS_APPROVED, self.STATUS_REJECTED]:
+                                        processed_count += 1
+            
+            logger.info(f"Total processed documents: {processed_count}")
+            return processed_count
+        except Exception as e:
+            logger.error(f"Error counting processed documents: {str(e)}")
+            raise
+    
+    def get_documents_statistics(self):
+        """
+        Obtiene estadísticas de documentos
+        
+        Returns:
+            dict: Estadísticas de documentos
+        """
+        try:
+            all_docs = self.firebase.get_data(self.DOCUMENTS_PATH)
+            
+            if not all_docs:
+                return {
+                    'total': 0,
+                    'pending': 0,
+                    'approved': 0,
+                    'rejected': 0,
+                    'processed': 0
+                }
+            
+            stats = {
+                'total': 0,
+                'pending': 0,
+                'approved': 0,
+                'rejected': 0,
+                'processed': 0
+            }
+            
+            # Iterar por cada trabajador
+            for worker_id, worker_docs in all_docs.items():
+                # Revisar hoja de vida
+                if self.CATEGORY_HOJA_VIDA in worker_docs:
+                    hoja_vida = worker_docs[self.CATEGORY_HOJA_VIDA]
+                    if isinstance(hoja_vida, dict):
+                        stats['total'] += 1
+                        status = hoja_vida.get('status', '')
+                        if status == self.STATUS_PENDING:
+                            stats['pending'] += 1
+                        elif status == self.STATUS_APPROVED:
+                            stats['approved'] += 1
+                            stats['processed'] += 1
+                        elif status == self.STATUS_REJECTED:
+                            stats['rejected'] += 1
+                            stats['processed'] += 1
+                
+                # Revisar antecedentes
+                if self.CATEGORY_ANTECEDENTES in worker_docs:
+                    antecedentes = worker_docs[self.CATEGORY_ANTECEDENTES]
+                    if isinstance(antecedentes, dict):
+                        stats['total'] += 1
+                        status = antecedentes.get('status', '')
+                        if status == self.STATUS_PENDING:
+                            stats['pending'] += 1
+                        elif status == self.STATUS_APPROVED:
+                            stats['approved'] += 1
+                            stats['processed'] += 1
+                        elif status == self.STATUS_REJECTED:
+                            stats['rejected'] += 1
+                            stats['processed'] += 1
+                
+                # Revisar certificaciones
+                if self.CATEGORY_CERTIFICACIONES in worker_docs:
+                    certificaciones = worker_docs[self.CATEGORY_CERTIFICACIONES]
+                    
+                    # Revisar títulos
+                    if self.SUBCATEGORY_TITULOS in certificaciones:
+                        titulos = certificaciones[self.SUBCATEGORY_TITULOS]
+                        if isinstance(titulos, dict):
+                            for titulo_id, titulo in titulos.items():
+                                if isinstance(titulo, dict):
+                                    stats['total'] += 1
+                                    status = titulo.get('status', '')
+                                    if status == self.STATUS_PENDING:
+                                        stats['pending'] += 1
+                                    elif status == self.STATUS_APPROVED:
+                                        stats['approved'] += 1
+                                        stats['processed'] += 1
+                                    elif status == self.STATUS_REJECTED:
+                                        stats['rejected'] += 1
+                                        stats['processed'] += 1
+                    
+                    # Revisar cartas
+                    if self.SUBCATEGORY_CARTAS in certificaciones:
+                        cartas = certificaciones[self.SUBCATEGORY_CARTAS]
+                        if isinstance(cartas, dict):
+                            for carta_id, carta in cartas.items():
+                                if isinstance(carta, dict):
+                                    stats['total'] += 1
+                                    status = carta.get('status', '')
+                                    if status == self.STATUS_PENDING:
+                                        stats['pending'] += 1
+                                    elif status == self.STATUS_APPROVED:
+                                        stats['approved'] += 1
+                                        stats['processed'] += 1
+                                    elif status == self.STATUS_REJECTED:
+                                        stats['rejected'] += 1
+                                        stats['processed'] += 1
+            
+            logger.info(f"Document statistics calculated: {stats}")
+            return stats
+        except Exception as e:
+            logger.error(f"Error getting document statistics: {str(e)}")
+            raise
+    
     def has_all_required_documents(self, worker_id):
         """
         Verifica si un trabajador tiene todos los documentos obligatorios

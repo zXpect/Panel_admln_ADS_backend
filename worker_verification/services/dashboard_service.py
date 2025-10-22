@@ -6,201 +6,341 @@ logger = logging.getLogger(__name__)
 
 
 class DashboardService:
-    """Servicio para manejar estadísticas del dashboard"""
+    """Servicio mejorado para manejar estadísticas del dashboard"""
     
     def __init__(self, firebase_service):
         self.firebase = firebase_service
         self.WORKERS_PATH = 'User/Trabajadores'
-        self.DOCUMENTS_PATH = 'workerDocuments'
+        self.DOCUMENTS_PATH = 'WorkerDocuments'  # CORREGIDO: path correcto
     
     def get_weekly_trends(self):
         """
-        Calcula tendencias de los últimos 7 días
-        Retorna datos de trabajadores en línea y documentos procesados por día
+        Calcula tendencias de los últimos 7 días de manera más precisa
         """
         try:
-            # Obtener fecha actual y hace 7 días
-            today = datetime.now()
-            week_ago = today - timedelta(days=7)
+            today = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+            week_ago = (today - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
             
-            # Inicializar estructura de datos para los 7 días
             days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
             trends = []
             
             workers = self.firebase.get_data(self.WORKERS_PATH) or {}
-            
             documents = self.firebase.get_data(self.DOCUMENTS_PATH) or {}
             
-            logger.info(f"Workers found: {len(workers)}, Documents found: {len(documents)}")
+            logger.info(f"Calculando tendencias semanales - Workers: {len(workers)}, Documents: {len(documents)}")
             
-            # Calcular para cada día de la semana
             for i in range(7):
                 current_day = week_ago + timedelta(days=i)
+                day_start = current_day.replace(hour=0, minute=0, second=0, microsecond=0)
+                day_end = current_day.replace(hour=23, minute=59, second=59, microsecond=999999)
                 day_name = days[current_day.weekday()]
                 
-                # Contar trabajadores que estuvieron en línea ese día
-                workers_online = self._count_workers_online_on_day(workers, current_day)
+                # Contar actividad de trabajadores
+                workers_active = self._count_workers_active_in_range(
+                    workers, day_start, day_end
+                )
                 
-                # Contar documentos procesados (aprobados o rechazados) ese día
-                docs_processed = self._count_documents_processed_on_day(documents, current_day)
+                # Contar documentos procesados
+                docs_processed = self._count_documents_processed_in_range(
+                    documents, day_start, day_end
+                )
+                
+                # Contar documentos subidos (para ver flujo de entrada)
+                docs_uploaded = self._count_documents_uploaded_in_range(
+                    documents, day_start, day_end
+                )
                 
                 trends.append({
                     'day': day_name,
-                    'workers': workers_online,
+                    'workers': workers_active,
                     'documents': docs_processed,
+                    'documentsUploaded': docs_uploaded,
                     'date': current_day.strftime('%Y-%m-%d')
                 })
             
-            logger.info(f"Weekly trends calculated: {trends}")
+            logger.info(f"Tendencias semanales calculadas exitosamente: {len(trends)} días")
             return trends
             
         except Exception as e:
-            logger.error(f"Error calculating weekly trends: {str(e)}", exc_info=True)
-            # Retornar datos de respaldo si hay error
-            return self._get_fallback_trends()
+            logger.error(f"Error calculando tendencias semanales: {str(e)}", exc_info=True)
+            return self._get_fallback_trends(days=7)
     
-    def _count_workers_online_on_day(self, workers, target_day):
+    def get_monthly_trends(self):
         """
-        Cuenta trabajadores que estuvieron en línea en un día específico
+        Calcula tendencias mensuales (últimos 30 días) agrupadas por semana
+        """
+        try:
+            today = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
+            month_ago = (today - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            workers = self.firebase.get_data(self.WORKERS_PATH) or {}
+            documents = self.firebase.get_data(self.DOCUMENTS_PATH) or {}
+            
+            # Agrupar por semanas
+            weekly_data = []
+            
+            for week_num in range(5):  # 30 días = ~4-5 semanas
+                week_start = month_ago + timedelta(days=week_num * 7)
+                week_end = min(week_start + timedelta(days=6), today)
+                
+                if week_start > today:
+                    break
+                
+                workers_active = self._count_workers_active_in_range(
+                    workers, week_start, week_end
+                )
+                
+                docs_processed = self._count_documents_processed_in_range(
+                    documents, week_start, week_end
+                )
+                
+                docs_uploaded = self._count_documents_uploaded_in_range(
+                    documents, week_start, week_end
+                )
+                
+                weekly_data.append({
+                    'week': f"Sem {week_num + 1}",
+                    'workers': workers_active,
+                    'documents': docs_processed,
+                    'documentsUploaded': docs_uploaded,
+                    'startDate': week_start.strftime('%Y-%m-%d'),
+                    'endDate': week_end.strftime('%Y-%m-%d')
+                })
+            
+            logger.info(f"Tendencias mensuales calculadas: {len(weekly_data)} semanas")
+            return weekly_data
+            
+        except Exception as e:
+            logger.error(f"Error calculando tendencias mensuales: {str(e)}", exc_info=True)
+            return []
+    
+    def _count_workers_active_in_range(self, workers, start_time, end_time):
+        """
+        Cuenta trabajadores que estuvieron activos en un rango de tiempo.
+        Se considera activo si:
+        - Tiene timestamp de actividad en el rango
+        - Tiene lastOnline en el rango
+        - Está actualmente online (para días recientes)
         """
         count = 0
-        target_date = target_day.date()
+        start_ts = int(start_time.timestamp() * 1000)
+        end_ts = int(end_time.timestamp() * 1000)
         
         for worker_id, worker_data in workers.items():
             if not isinstance(worker_data, dict):
                 continue
             
-            # Si tiene registro de última conexión
-            last_online = worker_data.get('lastOnline')
-            if last_online:
-                try:
-                    # Convertir timestamp a fecha
-                    if isinstance(last_online, (int, float)):
-                        online_date = datetime.fromtimestamp(last_online / 1000).date()
-                    else:
-                        online_date = datetime.fromisoformat(str(last_online)).date()
-                    
-                    if online_date == target_date:
-                        count += 1
-                except Exception as e:
-                    logger.debug(f"Error parsing lastOnline for worker {worker_id}: {e}")
-                    continue
+            is_active = False
             
-            # Si actualmente está en línea y no tiene registro de última conexión
-            elif worker_data.get('isOnline', False):
+            # 1. Verificar timestamp de actualización
+            timestamp = worker_data.get('timestamp')
+            if timestamp and self._is_timestamp_in_range(timestamp, start_ts, end_ts):
+                is_active = True
+            
+            # 2. Verificar lastOnline
+            if not is_active:
+                last_online = worker_data.get('lastOnline')
+                if last_online and self._is_timestamp_in_range(last_online, start_ts, end_ts):
+                    is_active = True
+            
+            # 3. Si está online ahora y estamos revisando hoy/ayer
+            if not is_active:
+                now = datetime.now()
+                if (end_time.date() >= (now - timedelta(days=1)).date() and 
+                    worker_data.get('isOnline', False)):
+                    is_active = True
+            
+            if is_active:
                 count += 1
         
         return count
     
-    def _count_documents_processed_on_day(self, documents, target_day):
+    def _count_documents_processed_in_range(self, documents, start_time, end_time):
         """
-        Cuenta documentos procesados (aprobados/rechazados) en un día específico
+        Cuenta documentos procesados (aprobados/rechazados) en un rango de tiempo
         """
         count = 0
-        target_date = target_day.date()
+        start_ts = int(start_time.timestamp() * 1000)
+        end_ts = int(end_time.timestamp() * 1000)
         
         for worker_id, worker_docs in documents.items():
             if not isinstance(worker_docs, dict):
                 continue
             
-            # Revisar todas las categorías de documentos
-            for category, category_data in worker_docs.items():
-                if not isinstance(category_data, dict):
-                    continue
-                
-                # Manejar documentos únicos (hoja_de_vida, antecedentes_judiciales)
-                if 'reviewedAt' in category_data:
-                    count += self._check_document_reviewed_on_day(category_data, target_date)
-                
-                # Manejar colecciones de documentos (certificaciones)
-                else:
-                    for doc_id, doc_data in category_data.items():
-                        if isinstance(doc_data, dict) and 'reviewedAt' in doc_data:
-                            count += self._check_document_reviewed_on_day(doc_data, target_date)
+            count += self._count_processed_in_category(
+                worker_docs, start_ts, end_ts
+            )
         
         return count
     
-    def _check_document_reviewed_on_day(self, doc_data, target_date):
+    def _count_documents_uploaded_in_range(self, documents, start_time, end_time):
         """
-        Verifica si un documento fue revisado en la fecha objetivo
+        Cuenta documentos SUBIDOS en un rango de tiempo
         """
-        reviewed_at = doc_data.get('reviewedAt')
-        status = doc_data.get('status')
+        count = 0
+        start_ts = int(start_time.timestamp() * 1000)
+        end_ts = int(end_time.timestamp() * 1000)
         
-        if reviewed_at and status in ['approved', 'rejected']:
-            try:
-                if isinstance(reviewed_at, (int, float)):
-                    review_date = datetime.fromtimestamp(reviewed_at / 1000).date()
-                else:
-                    review_date = datetime.fromisoformat(str(reviewed_at)).date()
-                
-                if review_date == target_date:
-                    return 1
-            except Exception as e:
-                logger.debug(f"Error parsing reviewedAt: {e}")
-                pass
+        for worker_id, worker_docs in documents.items():
+            if not isinstance(worker_docs, dict):
+                continue
+            
+            count += self._count_uploaded_in_category(
+                worker_docs, start_ts, end_ts
+            )
         
-        return 0
+        return count
     
-    def _get_fallback_trends(self):
+    def _count_processed_in_category(self, category_data, start_ts, end_ts):
         """
-        Retorna datos de respaldo si no se pueden calcular las tendencias reales
+        Cuenta recursivamente documentos procesados en una categoría
         """
-        days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+        count = 0
+        
+        for key, value in category_data.items():
+            if not isinstance(value, dict):
+                continue
+            
+            # Si tiene reviewedAt, es un documento
+            if 'reviewedAt' in value and 'status' in value:
+                reviewed_at = value.get('reviewedAt')
+                status_val = value.get('status')
+                
+                if (status_val in ['approved', 'rejected'] and 
+                    reviewed_at and 
+                    self._is_timestamp_in_range(reviewed_at, start_ts, end_ts)):
+                    count += 1
+            
+            # Si no, puede ser una categoría anidada (certificaciones)
+            else:
+                count += self._count_processed_in_category(value, start_ts, end_ts)
+        
+        return count
+    
+    def _count_uploaded_in_category(self, category_data, start_ts, end_ts):
+        """
+        Cuenta recursivamente documentos subidos en una categoría
+        """
+        count = 0
+        
+        for key, value in category_data.items():
+            if not isinstance(value, dict):
+                continue
+            
+            # Si tiene uploadedAt, es un documento
+            if 'uploadedAt' in value:
+                uploaded_at = value.get('uploadedAt')
+                
+                if uploaded_at and self._is_timestamp_in_range(uploaded_at, start_ts, end_ts):
+                    count += 1
+            
+            # Si no, puede ser una categoría anidada
+            else:
+                count += self._count_uploaded_in_category(value, start_ts, end_ts)
+        
+        return count
+    
+    def _is_timestamp_in_range(self, timestamp, start_ts, end_ts):
+        """
+        Verifica si un timestamp está dentro del rango
+        Maneja diferentes formatos de timestamp
+        """
+        try:
+            if isinstance(timestamp, (int, float)):
+                # Firebase usa milisegundos
+                ts = int(timestamp)
+                return start_ts <= ts <= end_ts
+            elif isinstance(timestamp, str):
+                # Intentar parsear string ISO
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                ts = int(dt.timestamp() * 1000)
+                return start_ts <= ts <= end_ts
+        except Exception as e:
+            logger.debug(f"Error parseando timestamp {timestamp}: {e}")
+            return False
+        
+        return False
+    
+    def _get_fallback_trends(self, days=7):
+        """
+        Retorna datos de respaldo si no se pueden calcular las tendencias
+        """
+        day_names = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
         today = datetime.now()
         
         trends = []
-        for i, day in enumerate(days):
-            date = today - timedelta(days=6-i)
+        for i in range(days):
+            date = today - timedelta(days=days - 1 - i)
+            day_name = day_names[date.weekday()] if days == 7 else f"Día {i+1}"
+            
             trends.append({
-                'day': day,
+                'day': day_name,
                 'workers': 0,
                 'documents': 0,
+                'documentsUploaded': 0,
                 'date': date.strftime('%Y-%m-%d')
             })
         
-        logger.warning("Using fallback trends data")
+        logger.warning("Usando datos de respaldo para tendencias")
         return trends
     
-    def get_monthly_trends(self):
+    def get_detailed_activity_stats(self):
         """
-        Calcula tendencias mensuales (últimos 30 días)
+        Obtiene estadísticas detalladas de actividad para análisis profundo
         """
         try:
-            today = datetime.now()
-            month_ago = today - timedelta(days=30)
-            
-            # CORREGIDO: Usar rutas correctas
             workers = self.firebase.get_data(self.WORKERS_PATH) or {}
             documents = self.firebase.get_data(self.DOCUMENTS_PATH) or {}
             
-            # Agrupar por semana
-            weekly_data = defaultdict(lambda: {'workers': 0, 'documents': 0})
+            now = datetime.now()
+            last_24h = now - timedelta(hours=24)
+            last_7d = now - timedelta(days=7)
+            last_30d = now - timedelta(days=30)
             
-            for i in range(30):
-                current_day = month_ago + timedelta(days=i)
-                week_number = f"Semana {(i // 7) + 1}"
-                
-                workers_count = self._count_workers_online_on_day(workers, current_day)
-                docs_count = self._count_documents_processed_on_day(documents, current_day)
-                
-                weekly_data[week_number]['workers'] += workers_count
-                weekly_data[week_number]['documents'] += docs_count
+            last_24h_ts = int(last_24h.timestamp() * 1000)
+            last_7d_ts = int(last_7d.timestamp() * 1000)
+            last_30d_ts = int(last_30d.timestamp() * 1000)
+            now_ts = int(now.timestamp() * 1000)
             
-            trends = [
-                {
-                    'week': week,
-                    'workers': data['workers'],
-                    'documents': data['documents']
+            stats = {
+                'workers': {
+                    'active_24h': self._count_workers_active_in_range(
+                        workers, last_24h, now
+                    ),
+                    'active_7d': self._count_workers_active_in_range(
+                        workers, last_7d, now
+                    ),
+                    'active_30d': self._count_workers_active_in_range(
+                        workers, last_30d, now
+                    )
+                },
+                'documents': {
+                    'processed_24h': self._count_documents_processed_in_range(
+                        documents, last_24h, now
+                    ),
+                    'processed_7d': self._count_documents_processed_in_range(
+                        documents, last_7d, now
+                    ),
+                    'processed_30d': self._count_documents_processed_in_range(
+                        documents, last_30d, now
+                    ),
+                    'uploaded_24h': self._count_documents_uploaded_in_range(
+                        documents, last_24h, now
+                    ),
+                    'uploaded_7d': self._count_documents_uploaded_in_range(
+                        documents, last_7d, now
+                    ),
+                    'uploaded_30d': self._count_documents_uploaded_in_range(
+                        documents, last_30d, now
+                    )
                 }
-                for week, data in weekly_data.items()
-            ]
+            }
             
-            return trends
+            return stats
             
         except Exception as e:
-            logger.error(f"Error calculating monthly trends: {str(e)}", exc_info=True)
-            return []
+            logger.error(f"Error obteniendo estadísticas detalladas: {str(e)}", exc_info=True)
+            return None
 
 
 # Instancia global del servicio

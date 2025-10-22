@@ -1,4 +1,3 @@
-# api/services/dashboard_service.py
 from datetime import datetime, timedelta
 from collections import defaultdict
 import logging
@@ -11,7 +10,6 @@ class DashboardService:
     
     def __init__(self, firebase_service):
         self.firebase = firebase_service
-        # CORREGIDO: Usar las mismas rutas que WorkerService
         self.WORKERS_PATH = 'User/Trabajadores'
         self.DOCUMENTS_PATH = 'workerDocuments'
     
@@ -29,10 +27,8 @@ class DashboardService:
             days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
             trends = []
             
-            # CORREGIDO: Usar la ruta correcta para trabajadores
             workers = self.firebase.get_data(self.WORKERS_PATH) or {}
             
-            # CORREGIDO: Usar la ruta correcta para documentos
             documents = self.firebase.get_data(self.DOCUMENTS_PATH) or {}
             
             logger.info(f"Workers found: {len(workers)}, Documents found: {len(documents)}")

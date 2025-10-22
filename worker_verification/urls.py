@@ -5,6 +5,8 @@ from .views import (
     DocumentViewSet,
     ClientViewSet,
     DashboardStatsView,
+    DashboardWeeklyTrendsView,
+    DashboardMonthlyTrendsView,
 )
 
 # Router para ViewSets
@@ -16,6 +18,8 @@ router.register(r'clients', ClientViewSet, basename='client')
 urlpatterns = [
     # Dashboard
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
+    path('dashboard/weekly-trends/', DashboardWeeklyTrendsView.as_view(), name='dashboard-weekly-trends'),
+    path('dashboard/monthly-trends/', DashboardMonthlyTrendsView.as_view(), name='dashboard-monthly-trends'),
     
     # ViewSets routes
     path('', include(router.urls)),

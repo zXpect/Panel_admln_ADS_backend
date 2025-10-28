@@ -7,6 +7,10 @@ from .dashboard_views import (
     DashboardMonthlyTrendsView,
     DashboardActivityStatsView,
 )
+from .bulk_worker_views import (
+    BulkWorkerUploadView,
+    BulkWorkerTemplateView,
+)
 
 __all__ = [
     'WorkerViewSet',
@@ -15,5 +19,7 @@ __all__ = [
     'DashboardStatsView',
     'DashboardWeeklyTrendsView',
     'DashboardMonthlyTrendsView',
-    'DashboardActivityStatsView', 
+    'DashboardActivityStatsView',
+    'BulkWorkerUploadView',
+    'BulkWorkerTemplateView',
 ]

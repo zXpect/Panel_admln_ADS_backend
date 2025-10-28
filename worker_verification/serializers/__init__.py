@@ -23,6 +23,11 @@ from .client_serializers import (
     ClientListSerializer,
 )
 
+from .bulk_worker_serializers import (
+    BulkWorkerUploadSerializer,
+    BulkWorkerResultSerializer,
+)
+
 __all__ = [
     # Worker serializers
     'WorkerSerializer',
@@ -45,4 +50,8 @@ __all__ = [
     # Client serializers
     'ClientSerializer',
     'ClientListSerializer',
+    
+    # Bulk upload serializers
+    'BulkWorkerUploadSerializer',
+    'BulkWorkerResultSerializer',
 ]

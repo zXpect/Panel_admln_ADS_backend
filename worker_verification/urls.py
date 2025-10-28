@@ -9,6 +9,10 @@ from .views import (
     DashboardMonthlyTrendsView,
     DashboardActivityStatsView,
 )
+from .views.bulk_worker_views import (
+    BulkWorkerUploadView,
+    BulkWorkerTemplateView,
+)
 
 # Router para ViewSets
 router = DefaultRouter()
@@ -17,19 +21,17 @@ router.register(r'documents', DocumentViewSet, basename='document')
 router.register(r'clients', ClientViewSet, basename='client')
 
 urlpatterns = [
-    # Dashboard - Estadísticas generales
+    # Dashboard
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
-    
-    # Dashboard - Tendencias semanales (últimos 7 días)
     path('dashboard/weekly-trends/', DashboardWeeklyTrendsView.as_view(), name='dashboard-weekly-trends'),
-    
-    # Dashboard - Tendencias mensuales (últimos 30 días)
     path('dashboard/monthly-trends/', DashboardMonthlyTrendsView.as_view(), name='dashboard-monthly-trends'),
-    
-    # Dashboard - Estadísticas de actividad detalladas (NUEVO)
     path('dashboard/activity-stats/', DashboardActivityStatsView.as_view(), name='dashboard-activity-stats'),
     
-    # ViewSets routes
+   
+    path('workers/bulk-upload/', BulkWorkerUploadView.as_view(), name='bulk-worker-upload'),
+    path('workers/bulk-upload-template/', BulkWorkerTemplateView.as_view(), name='bulk-worker-template'),
+    
+    # ViewSets routes (va al final)
     path('', include(router.urls)),
 ]
 
@@ -37,18 +39,22 @@ urlpatterns = [
 RUTAS DISPONIBLES:
 
 WORKERS:
-- GET    /api/workers/                      - Listar trabajadores
-- GET    /api/workers/{id}/                 - Detalle de trabajador
-- POST   /api/workers/                      - Crear trabajador
-- PUT    /api/workers/{id}/                 - Actualizar trabajador completo
-- PATCH  /api/workers/{id}/                 - Actualizar campos específicos
-- DELETE /api/workers/{id}/                 - Eliminar trabajador
-- GET    /api/workers/statistics/           - Estadísticas de trabajadores
-- PATCH  /api/workers/{id}/availability/    - Actualizar disponibilidad
-- PATCH  /api/workers/{id}/verification_status/ - Actualizar estado de verificación
-- PATCH  /api/workers/{id}/online_status/   - Actualizar estado en línea
-- PATCH  /api/workers/{id}/location/        - Actualizar ubicación
-- POST   /api/workers/{id}/add_rating/      - Agregar calificación
+- GET    /api/workers/                           - Listar trabajadores
+- GET    /api/workers/{id}/                      - Detalle de trabajador
+- POST   /api/workers/                           - Crear trabajador
+- PUT    /api/workers/{id}/                      - Actualizar trabajador completo
+- PATCH  /api/workers/{id}/                      - Actualizar campos específicos
+- DELETE /api/workers/{id}/                      - Eliminar trabajador
+- GET    /api/workers/statistics/                - Estadísticas de trabajadores
+- PATCH  /api/workers/{id}/availability/         - Actualizar disponibilidad
+- PATCH  /api/workers/{id}/verification_status/  - Actualizar estado de verificación
+- PATCH  /api/workers/{id}/online_status/        - Actualizar estado en línea
+- PATCH  /api/workers/{id}/location/             - Actualizar ubicación
+- POST   /api/workers/{id}/add_rating/           - Agregar calificación
+
+BULK UPLOAD (NUEVO):
+- POST   /api/workers/bulk-upload/               - Cargar trabajadores desde Excel
+- GET    /api/workers/bulk-upload-template/      - Descargar template de Excel
 
 DOCUMENTS:
 - GET    /api/documents/pending/                           - Documentos pendientes
@@ -57,12 +63,12 @@ DOCUMENTS:
 - GET    /api/documents/worker/{worker_id}/antecedentes/   - Antecedentes judiciales
 - GET    /api/documents/worker/{worker_id}/titulos/        - Títulos
 - GET    /api/documents/worker/{worker_id}/cartas/         - Cartas de recomendación
-- POST   /api/documents/                                    - Crear documento (CORREGIDO)
-- POST   /api/documents/approve/                           - Aprobar documento
-- POST   /api/documents/reject/                            - Rechazar documento
+- POST   /api/documents/                                    - Crear documento
+- POST   /api/documents/approve/                            - Aprobar documento
+- POST   /api/documents/reject/                             - Rechazar documento
 - GET    /api/documents/worker/{worker_id}/check-requirements/ - Verificar documentos requeridos
-- DELETE /api/documents/delete/                            - Eliminar documento
-- GET    /api/documents/file-url/                          - Obtener URL de archivo
+- DELETE /api/documents/delete/                             - Eliminar documento
+- GET    /api/documents/file-url/                           - Obtener URL de archivo
 
 CLIENTS:
 - GET    /api/clients/        - Listar clientes
@@ -70,7 +76,10 @@ CLIENTS:
 - GET    /api/clients/count/  - Total de clientes
 
 DASHBOARD:
-- GET    /api/dashboard/stats/  - Estadísticas generales
+- GET    /api/dashboard/stats/           - Estadísticas generales
+- GET    /api/dashboard/weekly-trends/   - Tendencias semanales
+- GET    /api/dashboard/monthly-trends/  - Tendencias mensuales
+- GET    /api/dashboard/activity-stats/  - Estadísticas de actividad
 
 AUTH:
 - POST   /api/auth/token/         - Obtener token JWT

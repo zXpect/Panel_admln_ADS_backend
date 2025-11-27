@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from ..services.worker_service import worker_service
 from ..serializers import (
     WorkerSerializer,
+    WorkerCreateSerializer,
     WorkerUpdateSerializer,
     WorkerAvailabilitySerializer,
     WorkerOnlineStatusSerializer,
@@ -100,30 +101,49 @@ class WorkerViewSet(viewsets.ViewSet):
     def create(self, request):
         """
         POST /api/workers/
-        Crea un nuevo trabajador
+        Crea un nuevo trabajador con Firebase Auth
         """
         try:
-            serializer = WorkerSerializer(data=request.data)
-            
+            serializer = WorkerCreateSerializer(data=request.data)
+
             if not serializer.is_valid():
                 return Response({
                     'success': False,
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-            worker = worker_service.create_worker(serializer.validated_data)
-            
-            return Response({
+
+            # Usar nuevo método con autenticación
+            worker, password_generated, auth_existed = worker_service.create_worker_with_auth(
+                serializer.validated_data
+            )
+
+            response_data = {
                 'success': True,
                 'message': 'Trabajador creado exitosamente',
                 'data': WorkerSerializer(worker).data
-            }, status=status.HTTP_201_CREATED)
-            
+            }
+
+            # Incluir contraseña si fue auto-generada
+            if password_generated:
+                response_data['password'] = password_generated
+                response_data['message'] += ' (Contraseña generada automáticamente)'
+
+            if auth_existed:
+                response_data['warning'] = 'El usuario ya existía en Firebase Auth'
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            logger.error(f"Validation error creating worker: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Error creating worker: {str(e)}")
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'Error interno del servidor'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def update(self, request, pk=None):

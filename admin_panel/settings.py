@@ -176,6 +176,7 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-request-id',
 ]
 
 # ==================== FIREBASE SETTINGS ====================
@@ -221,3 +222,27 @@ LOGGING = {
 # Crear directorio de logs si no existe
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
+
+# ==================== PRODUCTION SETTINGS ====================
+# Estas configuraciones se activan cuando DJANGO_ENV=production
+
+DJANGO_ENV = config('DJANGO_ENV', default='development')
+
+if DJANGO_ENV == 'production':
+    DEBUG = False
+
+    # Seguridad adicional para producción
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+
+    # PARA HTTPS
+    # SECURE_SSL_REDIRECT = True
+    # SESSION_COOKIE_SECURE = True
+    # CSRF_COOKIE_SECURE = True
+    # SECURE_HSTS_SECONDS = 31536000
+    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
+    # Logging más restrictivo en producción
+    LOGGING['loggers']['django']['level'] = 'WARNING'
+    LOGGING['loggers']['worker_verification']['level'] = 'INFO'

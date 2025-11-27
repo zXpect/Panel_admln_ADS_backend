@@ -1,5 +1,6 @@
 from .worker_serializers import (
     WorkerSerializer,
+    WorkerCreateSerializer,
     WorkerUpdateSerializer,
     WorkerAvailabilitySerializer,
     WorkerOnlineStatusSerializer,
@@ -31,6 +32,7 @@ from .bulk_worker_serializers import (
 __all__ = [
     # Worker serializers
     'WorkerSerializer',
+    'WorkerCreateSerializer',
     'WorkerUpdateSerializer',
     'WorkerAvailabilitySerializer',
     'WorkerOnlineStatusSerializer',

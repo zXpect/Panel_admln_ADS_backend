@@ -153,32 +153,93 @@ class WorkerService:
             logger.error(f"Error getting online workers: {str(e)}")
             raise
     
+    def create_worker_with_auth(self, worker_data):
+        """
+        Crea un nuevo trabajador con autenticación Firebase
+        - Crea usuario en Firebase Auth
+        - Usa el UID generado como Worker ID
+        - Crea perfil en Realtime Database
+
+        Args:
+            worker_data (dict): Datos del trabajador (sin ID)
+
+        Returns:
+            tuple: (worker_data, password_generated, auth_existed)
+        """
+        try:
+            from .bulk_worker_service import bulk_worker_service
+
+            email = worker_data.get('email')
+            password = worker_data.get('password', '')
+            name = worker_data.get('name', '')
+            lastName = worker_data.get('lastName', '')
+            display_name = f"{name} {lastName}".strip()
+
+            # Crear usuario en Firebase Auth
+            user_id, password_used, auth_error = bulk_worker_service.create_firebase_auth_user(
+                email, password, display_name
+            )
+
+            if not user_id:
+                raise ValueError(f"Error creando usuario en Firebase Auth: {auth_error}")
+
+            # Agregar ID y timestamp
+            worker_data['id'] = user_id
+            worker_data['timestamp'] = int(datetime.now().timestamp() * 1000)
+            worker_data['isAvailable'] = True  # Individual workers son available por defecto
+            worker_data['isOnline'] = False
+            worker_data['rating'] = worker_data.get('rating', 0.0)
+            worker_data['totalRatings'] = worker_data.get('totalRatings', 0)
+
+            # Remover password antes de guardar en Database
+            if 'password' in worker_data:
+                del worker_data['password']
+
+            # Asegurar tipos correctos para compatibilidad
+            if 'latitude' in worker_data:
+                worker_data['latitude'] = float(worker_data['latitude'])
+            if 'longitude' in worker_data:
+                worker_data['longitude'] = float(worker_data['longitude'])
+            if 'pricePerHour' in worker_data:
+                worker_data['pricePerHour'] = float(worker_data['pricePerHour'])
+
+            # Crear perfil en Realtime Database
+            path = f"{self.WORKERS_PATH}/{user_id}"
+            self.firebase.set_data(path, worker_data)
+
+            logger.info(f"Worker created with auth: {user_id} - {email}")
+            return worker_data, password_used, auth_error is not None
+
+        except Exception as e:
+            logger.error(f"Error creating worker with auth: {str(e)}")
+            raise
+
     def create_worker(self, worker_data):
         """
-        Crea un nuevo trabajador
-        
+        Crea un nuevo trabajador (LEGACY - mantener para compatibilidad)
+
         Args:
             worker_data (dict): Datos del trabajador
-            
+
         Returns:
             dict: Trabajador creado
         """
         try:
             worker_id = worker_data.get('id')
-            
+
             if not worker_id:
                 raise ValueError("Worker ID is required")
-            
+
             # Agregar timestamp
             worker_data['timestamp'] = int(datetime.now().timestamp() * 1000)
             worker_data['isAvailable'] = worker_data.get('isAvailable', True)
             worker_data['isOnline'] = worker_data.get('isOnline', False)
             worker_data['rating'] = worker_data.get('rating', 0)
             worker_data['totalRatings'] = worker_data.get('totalRatings', 0)
-            
+
             path = f"{self.WORKERS_PATH}/{worker_id}"
             self.firebase.set_data(path, worker_data)
-            
+
             logger.info(f"Worker {worker_id} created successfully")
             return worker_data
         except Exception as e:

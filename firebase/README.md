@@ -67,12 +67,15 @@ Las reglas publicadas hoy tienen en la raíz `".read": true, ".write": true`:
 Sin estos cambios, publicar las reglas **rompe la app**. Se verificó leyendo
 el código; las rutas son relativas a `app/src/main/java/com/project/ads/`.
 
+**Estado: implementados** en la rama `fix/firebase-rules-compat` de `ADSv`
+(compila con `./gradlew compileDebugJavaWithJavac`).
+
 | # | Archivo | Problema con las reglas nuevas | Cambio |
 |---|---|---|---|
 | 1 | `activities/client/MyRequestsActivity.java:167` | Lee todo `requests` y filtra en el teléfono → `permission_denied` | `child("requests").orderByChild("client_id").equalTo(uid)` |
 | 2 | `activities/worker/ActiveServicesActivity.java:162` | Igual | `orderByChild("worker_id").equalTo(uid)` |
 | 3 | `activities/worker/PendingRequestsActivity.java:187` | Igual | `orderByChild("worker_id").equalTo(uid)` |
-| 4 | `activities/LoginActivity.java:375` y `:401` (`verifyEmailInDatabase`) | Consulta `User/Clientes` y `User/Trabajadores` por email **antes de iniciar sesión**. Además de fallar, permite saber qué correos están registrados | Iniciar sesión primero y después comprobar el rol leyendo `User/<Clientes|Trabajadores>/<uid>` (la app ya lo hace en `:222`) |
+| 4 | `activities/LoginActivity.java` (`resetPassword` → `verifyEmailInDatabase`) | La **recuperación de contraseña** consulta `User/Clientes` y `User/Trabajadores` por email sin sesión. Además de fallar, permite saber qué correos están registrados. (El login en sí ya inicia sesión primero y comprueba el rol por uid) | Enviar el correo directamente con `sendPasswordResetEmail` y mostrar siempre un mensaje neutro, exista o no la cuenta |
 | 5 | `activities/client/VerifyRequestActivity.java:259` | Lee el nodo `users`, que no existe (hoy devuelve vacío y se usan valores por defecto; con las reglas falla y **no se pueden crear solicitudes**) | Leer el cliente de `User/Clientes/<uid>` y el trabajador de `User/Trabajadores/<workerId>` |
 
 Los cambios 1 a 3 aprovechan los índices `.indexOn` de `client_id`/`worker_id`,

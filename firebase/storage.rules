@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Reglas de Firebase Storage de ADS. Ver firebase/README.md.
+// El backend (SDK admin) no pasa por estas reglas.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isImage(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024
+          && request.resource.contentType.matches('image/(jpeg|jpg|png|webp)');
+    }
+
+    // Documentos de verificación: solo el trabajador dueño. El panel admin
+    // los lee con URLs firmadas generadas por el backend.
+    match /worker_documents/{uid}/{allPaths=**} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+          && request.resource.size < 10 * 1024 * 1024
+          && request.resource.contentType.matches('application/pdf|image/(jpeg|jpg|png)');
+    }
+
+    // Foto de perfil de clientes: client_images/<uid>/<archivo>
+    match /client_images/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && isImage(5);
+    }
+
+    // Foto de perfil de trabajadores: worker_profiles/profile_<uid>_<timestamp>.jpg
+    // (la ruta no tiene carpeta por uid; el dueño se valida por el nombre)
+    match /worker_profiles/{fileName} {
+      allow read: if signedIn();
+      allow delete: if signedIn() && fileName.matches('profile_' + request.auth.uid + '_.*');
+      allow create, update: if signedIn()
+          && fileName.matches('profile_' + request.auth.uid + '_.*')
+          && isImage(5);
+    }
+
+    // Todo lo demás, cerrado
+  }
+}

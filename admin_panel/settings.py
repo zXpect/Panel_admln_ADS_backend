@@ -203,6 +203,8 @@ PAYMENTS = {
     'MOCK': {
         'EVENTS_SECRET': config('MOCK_EVENTS_SECRET', default=''),
         'INTEGRITY_SECRET': config('MOCK_INTEGRITY_SECRET', default=''),
+        # URL con la que el teléfono/emulador llega al backend (emulador: http://10.0.2.2:8000)
+        'CHECKOUT_BASE_URL': config('MOCK_CHECKOUT_BASE_URL', default='http://localhost:8000'),
     },
 }
 

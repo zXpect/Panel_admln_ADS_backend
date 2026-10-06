@@ -30,6 +30,7 @@ urlpatterns = [
     
     # Payments App
     path('api/payments/', include('payments.urls')),
+    path('api/', include('payments.request_urls')),
 
     # Worker Verification App
     path('api/', include('worker_verification.urls')),

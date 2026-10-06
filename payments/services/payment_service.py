@@ -1,14 +1,18 @@
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from worker_verification.services.firebase_service import firebase_service
 
 from ..models import Payment, PaymentEvent
 from .gateways import get_gateway
+from .notification_service import notification_service
+from .service_request_service import ServiceRequestError, service_request_service
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +62,19 @@ class PaymentService:
         Payment.STATUS_VOIDED,
     }
 
+    # Un pago PENDING más viejo que esto se da por abandonado y se permite reintentar
+    PENDING_EXPIRATION = timedelta(minutes=30)
+
     def __init__(self):
         self.firebase = firebase_service
+        self.requests = service_request_service
+        self.notifications = notification_service
 
     @staticmethod
     def generate_reference():
         return f"ADS-{uuid.uuid4().hex[:20].upper()}"
 
-    def create_payment(self, service_request_id, client_uid, worker_uid, amount_in_cents, redirect_url=None):
+    def create_payment(self, service_request_id, client_uid, worker_uid, amount_in_cents, redirect_url=None, sync=True):
         """
         Crea un Payment PENDING y la sesión de checkout en la pasarela activa.
         El monto debe venir calculado por el servidor (cotización aceptada),
@@ -91,8 +100,99 @@ class PaymentService:
         )
         logger.info(f"Payment created: {reference} for request {service_request_id}")
 
-        self.sync_to_firebase(payment)
+        if sync:
+            self.sync_to_firebase(payment)
         return payment, session
+
+    def start_payment(self, client_uid, service_request_id, redirect_url=None):
+        """
+        Inicia (o retoma) el pago de una solicitud. El monto sale de la
+        cotización aceptada guardada en Firebase, nunca de la app.
+
+        Returns:
+            tuple: (Payment, CheckoutSession, created)
+
+        Raises:
+            ServiceRequestError: la solicitud no se puede pagar (403/404/409)
+        """
+        request = self.requests.get_request(service_request_id)
+
+        if request.get('client_id') != client_uid:
+            raise ServiceRequestError('Solo el cliente de la solicitud puede pagarla', 403)
+        if request.get('status') != 'completed':
+            raise ServiceRequestError('El servicio debe estar completado para pagarlo', 409)
+        if request.get('quote_status') != 'accepted':
+            raise ServiceRequestError('La solicitud no tiene una cotización aceptada', 409)
+        if request.get('payment_status') == 'approved':
+            raise ServiceRequestError('Esta solicitud ya fue pagada', 409)
+
+        quoted_price = request.get('quoted_price')
+        if not isinstance(quoted_price, int) or isinstance(quoted_price, bool) or quoted_price <= 0:
+            logger.error(f"Invalid quoted_price for request {service_request_id}")
+            raise ServiceRequestError('La cotización de la solicitud no es válida', 409)
+        amount_in_cents = quoted_price * 100
+
+        if Payment.objects.filter(service_request_id=service_request_id, status=Payment.STATUS_APPROVED).exists():
+            raise ServiceRequestError('Esta solicitud ya fue pagada', 409)
+
+        pending = self._reusable_pending_payment(service_request_id, amount_in_cents)
+        if pending:
+            session = get_gateway().create_transaction(
+                pending.reference, pending.amount_in_cents, pending.currency, redirect_url)
+            return pending, session, False
+
+        try:
+            with transaction.atomic():
+                payment, session = self.create_payment(
+                    service_request_id=service_request_id,
+                    client_uid=client_uid,
+                    worker_uid=request.get('worker_id', ''),
+                    amount_in_cents=amount_in_cents,
+                    redirect_url=redirect_url,
+                    sync=False,
+                )
+        except IntegrityError:
+            # Otra petición simultánea creó el pago PENDING; se devuelve ese
+            pending = Payment.objects.get(service_request_id=service_request_id, status=Payment.STATUS_PENDING)
+            session = get_gateway().create_transaction(
+                pending.reference, pending.amount_in_cents, pending.currency, redirect_url)
+            return pending, session, False
+
+        try:
+            self.sync_to_firebase(payment)
+        except FirebaseSyncError:
+            # El pago existe y el checkout funciona; el webhook vuelve a sincronizar
+            pass
+        return payment, session, True
+
+    def _reusable_pending_payment(self, service_request_id, amount_in_cents):
+        """
+        Devuelve el pago PENDING vigente de la solicitud, o None. Uno vencido
+        (más de PENDING_EXPIRATION) o con otro monto se cierra como ERROR.
+        """
+        pending = Payment.objects.filter(
+            service_request_id=service_request_id, status=Payment.STATUS_PENDING).first()
+        if pending is None:
+            return None
+
+        expired = pending.created_at < timezone.now() - self.PENDING_EXPIRATION
+        if not expired and pending.amount_in_cents == amount_in_cents:
+            return pending
+
+        # TODO(Fase 7): con Wompi, consultar el estado real de la transacción antes
+        # de expirarla, por si fue aprobada y el evento aún no llega.
+        reason = 'expired' if expired else 'amount_changed'
+        logger.info(f"Closing pending payment {pending.reference}: {reason}")
+        pending.status = Payment.STATUS_ERROR
+        pending.save(update_fields=['status', 'updated_at'])
+        PaymentEvent.objects.create(
+            payment=pending,
+            event_type=f'local.{reason}',
+            payload={'reason': reason},
+            checksum='',
+            checksum_valid=True,
+        )
+        return None
 
     def process_event(self, payload, header_checksum=None):
         """
@@ -133,6 +233,11 @@ class PaymentService:
 
         if result.outcome in (EventResult.APPLIED, EventResult.DUPLICATE):
             self.sync_to_firebase(payment)
+
+        if result.outcome == EventResult.APPLIED and payment.status == Payment.STATUS_APPROVED:
+            self.notifications.notify('payment_approved', payment.service_request_id, {
+                'worker_id': payment.worker_uid,
+            })
         return result
 
     def _apply_event(self, payment, event):

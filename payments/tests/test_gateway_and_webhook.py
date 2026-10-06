@@ -7,12 +7,12 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from .guards import check_payment_mode
-from .models import Payment, PaymentEvent
-from .services.gateways import get_gateway
-from .services.payment_service import EventResult, FirebaseSyncError, payment_service
-from .services.gateways.base import BaseGateway
-from .services.signature import (
+from ..guards import check_payment_mode
+from ..models import Payment, PaymentEvent
+from ..services.gateways import get_gateway
+from ..services.payment_service import EventResult, FirebaseSyncError, payment_service
+from ..services.gateways.base import BaseGateway
+from ..services.signature import (
     event_checksum,
     integrity_signature,
     verify_event_checksum,
@@ -218,6 +218,11 @@ class PaymentFlowTestCase(TestCase):
         patcher = mock.patch.object(payment_service, 'firebase', self.firebase)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Sin notificaciones push reales en las pruebas
+        self.notifications = mock.MagicMock()
+        notifications_patcher = mock.patch.object(payment_service, 'notifications', self.notifications)
+        notifications_patcher.start()
+        self.addCleanup(notifications_patcher.stop)
 
         self.gateway = get_gateway()
         self.payment, self.session = payment_service.create_payment(

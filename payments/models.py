@@ -59,6 +59,15 @@ class Payment(models.Model):
         verbose_name = 'Pago'
         verbose_name_plural = 'Pagos'
         ordering = ['-created_at']
+        constraints = [
+            # Un solo intento de pago abierto por solicitud (evita cobros dobles
+            # si la app envía dos veces POST /api/payments/)
+            models.UniqueConstraint(
+                fields=['service_request_id'],
+                condition=models.Q(status='PENDING'),
+                name='unique_pending_payment_per_request',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.reference} - {self.status} - {self.amount_in_cents}"

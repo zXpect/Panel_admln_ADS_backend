@@ -122,6 +122,15 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ],
+    # Límites por endpoint (ScopedRateThrottle). Caché local: en producción con
+    # varios workers de gunicorn conviene una caché compartida (Redis/BD).
+    'DEFAULT_THROTTLE_RATES': {
+        'payments': '30/min',
+        'payments_webhook': '120/min',
+        'service_requests': '30/min',
+        'ratings': '10/min',
+        'notifications': '60/min',
+    },
 }
 
 # ==================== JWT SETTINGS ====================

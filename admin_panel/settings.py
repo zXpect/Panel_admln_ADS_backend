@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     
     # Local apps
     'worker_verification',
+    'payments',
 ]
 
 MIDDLEWARE = [
@@ -185,6 +186,26 @@ FIREBASE_CONFIG = {
     'STORAGE_BUCKET': config('FIREBASE_STORAGE_BUCKET', default=''),
 }
 
+# ==================== PAYMENTS SETTINGS ====================
+DJANGO_ENV = config('DJANGO_ENV', default='development')
+
+# PAGOS_MODO=mock|wompi. El mock está prohibido en producción (ver payments/guards.py)
+PAYMENTS = {
+    'MODE': config('PAGOS_MODO', default='mock'),
+    'CURRENCY': 'COP',
+    'WOMPI': {
+        'PUBLIC_KEY': config('WOMPI_PUBLIC_KEY', default=''),
+        'PRIVATE_KEY': config('WOMPI_PRIVATE_KEY', default=''),
+        'EVENTS_SECRET': config('WOMPI_EVENTS_SECRET', default=''),
+        'INTEGRITY_SECRET': config('WOMPI_INTEGRITY_SECRET', default=''),
+        'BASE_URL': config('WOMPI_BASE_URL', default='https://sandbox.wompi.co/v1'),
+    },
+    'MOCK': {
+        'EVENTS_SECRET': config('MOCK_EVENTS_SECRET', default=''),
+        'INTEGRITY_SECRET': config('MOCK_INTEGRITY_SECRET', default=''),
+    },
+}
+
 # ==================== LOGGING ====================
 LOGGING = {
     'version': 1,
@@ -212,6 +233,10 @@ LOGGING = {
             'level': 'INFO',
         },
         'worker_verification': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+        },
+        'payments': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
         },

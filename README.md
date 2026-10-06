@@ -773,9 +773,66 @@ Este proyecto es privado y confidencial.
 
 1. Fork el proyecto
 2. Crear rama de feature (`git checkout -b feature/AmazingFeature`)
-3. Commit cambios (`git commit -m 'Add some AmazingFeature'`)
+3. Commit cambios siguiendo la [convención de commits](#convención-de-commits)
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abrir Pull Request
+
+### Convención de Commits
+
+Este proyecto sigue [Conventional Commits](https://www.conventionalcommits.org/es/). El mensaje debe tener el formato:
+
+```
+<tipo>(<scope>): <descripción corta>
+
+[cuerpo opcional]
+
+[footer opcional]
+```
+
+#### Tipos
+
+| Tipo       | Uso                                                                 |
+|------------|----------------------------------------------------------------------|
+| `feat`     | Nueva funcionalidad                                                  |
+| `fix`      | Corrección de un bug                                                 |
+| `refactor` | Cambio de código que no arregla un bug ni agrega funcionalidad       |
+| `perf`     | Cambio que mejora el rendimiento                                     |
+| `docs`     | Cambios solo de documentación (README, comentarios, etc.)            |
+| `style`    | Cambios de formato (espacios, comas, etc.) sin afectar la lógica     |
+| `test`     | Agregar o corregir tests                                             |
+| `build`    | Cambios en dependencias o sistema de build (`requirements.txt`, etc.)|
+| `ci`       | Cambios en configuración de integración continua                    |
+| `chore`    | Tareas de mantenimiento que no afectan `src` ni tests                |
+| `revert`   | Revierte un commit anterior                                          |
+
+#### Scopes usados en este proyecto
+
+Corresponden a los módulos de `worker_verification/`:
+
+- `workers` — trabajadores
+- `documents` — documentos y verificación
+- `clients` — clientes
+- `dashboard` — estadísticas y dashboard
+- `auth` — autenticación/JWT
+- `settings` — configuración del proyecto (`admin_panel/settings.py`, `urls.py`)
+- `firebase` — integración con Firebase (Realtime Database / Storage)
+
+#### Reglas
+
+- Descripción corta en modo imperativo, sin punto final: `add`, `fix`, `update` (no `added`, `fixed`).
+- Máximo ~72 caracteres en la primera línea.
+- Un commit = un cambio lógico coherente.
+- Si el cambio rompe compatibilidad, agregar `!` después del scope (`feat(auth)!: ...`) y describir el impacto en el footer con `BREAKING CHANGE:`.
+
+#### Ejemplos
+
+```
+feat(settings): add project-level URL routing with JWT and worker_verification
+fix(documents): validate file size before upload to Firebase Storage
+docs(readme): document verification status endpoint
+refactor(workers): extract availability logic into WorkerService
+chore(build): bump djangorestframework-simplejwt to 5.3
+```
 
 ## Contacto
 

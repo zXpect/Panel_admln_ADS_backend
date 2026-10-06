@@ -53,6 +53,9 @@ class FakeFirebase:
             self.set_data(f"{path}/{key}", value)
         return True
 
+    def delete_data(self, path):
+        return self.set_data(path, None)
+
     def get_database_reference(self, path=''):
         return FakeReference(self, path)
 

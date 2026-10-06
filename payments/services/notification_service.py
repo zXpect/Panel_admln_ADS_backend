@@ -117,6 +117,15 @@ class NotificationService:
             ))
             logger.info(f"Notification '{payload.get('type')}' sent to {uid}")
             return True
+        except messaging.UnregisteredError:
+            # Token caducado (la app se reinstaló o rotó el token): se borra para
+            # no reintentar; la app guarda el nuevo al abrir o en onNewToken
+            logger.warning(f"Stale FCM token for {uid}; removing it")
+            try:
+                self.firebase.delete_data(f"{self.TOKENS_PATH}/{uid}")
+            except Exception as e:
+                logger.error(f"Error removing stale token for {uid}: {str(e)}")
+            return False
         except Exception as e:
             logger.error(f"Error sending notification to {uid}: {str(e)}")
             return False

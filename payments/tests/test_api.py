@@ -352,6 +352,17 @@ class NotificationApiTests(AppApiTestCase):
         self.assertEqual(message.token, 'fcm-client')
         self.assertEqual(message.data['status'], 'on_the_way')
 
+    def test_stale_token_is_removed(self):
+        from firebase_admin import messaging
+        self.fcm_send.side_effect = messaging.UnregisteredError('Requested entity was not found.')
+
+        response = self.notify(CLIENT, 'new_request')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()['data']['sent'])
+        self.assertIsNone(self.fb.get_data(f"Tokens/{WORKER}"))
+        self.assertIsNotNone(self.fb.get_data(f"Tokens/{CLIENT}"))
+
     def test_missing_token_is_not_an_error(self):
         self.fb.set_data(f"Tokens/{WORKER}", None)
         response = self.notify(CLIENT, 'new_request')

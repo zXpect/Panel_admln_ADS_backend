@@ -119,6 +119,14 @@ Corrección:
 4. Después, cerrar la lectura de `Tokens/<uid>` a solo su dueño (en
    `build_rules.py`, nodo `Tokens`).
 
+## Estado
+
+**Publicadas en producción el 2026-10-06:** `database.rules.json` (finales) y
+`storage.rules`, junto con la versión de la app de la rama `feature/payments`.
+Verificado: sin sesión, lectura y escritura de la base dan `401` y Storage `403`;
+flujo completo (solicitud → cotización → servicio → pago → calificación)
+probado en dos teléfonos.
+
 ## Plan de despliegue
 
 **Etapa 1 — ahora (antes de las fases 3 y 4 de pagos)**

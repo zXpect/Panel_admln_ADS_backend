@@ -101,10 +101,21 @@ test('no se borran solicitudes', async () => {
 });
 
 // ---------- requests: transiciones ----------
-test('cliente cancela solo en pending', async () => {
+test('cliente cancela mientras no haya precio acordado', async () => {
   await assertSucceeds(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled', cancelled_at: 2 }));
-  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted' }));
+  // Aceptada, cotización pendiente o rechazada: aún puede cancelar
+  for (const quote_status of ['quoted', 'rejected']) {
+    await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted', quote_status }));
+    await assertSucceeds(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled' }));
+  }
+  // Con precio acordado ya no
+  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted', quote_status: 'accepted' }));
   await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled' }));
+  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'on_the_way' }));
+  await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled' }));
+  // El trabajador no cancela
+  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'pending', quote_status: null }));
+  await assertFails(update(ref(db(WORKER), `requests/${REQ}`), { status: 'cancelled' }));
 });
 test('cliente no avanza estados del trabajador', async () => {
   await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'accepted' }));

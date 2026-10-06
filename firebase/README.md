@@ -41,7 +41,8 @@ Las reglas publicadas hoy tienen en la raíz `".read": true, ".write": true`:
   - **Los campos de cotización (`quoted_price`, `quote_status`, `quoted_at`,
     `quote_accepted_at`, `quote_rejection_reason`) y de pago (`payment_status`,
     `payment_reference`, `payment_updated_at`) solo los escribe el backend.**
-  - Transiciones de `status` por rol: el cliente solo cancela desde `pending`;
+  - Transiciones de `status` por rol: el cliente cancela mientras no haya precio
+    acordado (`pending`, o `accepted` con la cotización pendiente o rechazada);
     el trabajador sigue `pending → accepted|rejected → on_the_way → in_progress → completed`,
     sin saltar estados. Nadie cambia `client_id` ni `worker_id`, ni borra solicitudes.
   - Final: iniciar el viaje exige `quote_status == 'accepted'`, y la
@@ -106,9 +107,12 @@ Corrección:
    `firebase_admin.messaging`, autenticado con el ID token de Firebase; el
    servidor decide destinatario y texto y valida el rol de quien notifica. Las
    notificaciones de cotización y pago las dispara el propio backend.
-2. Pendiente (Fase 4): que la app llame a ese endpoint y quitar
-   `FirebaseAuthProvider`, `FCMAuthInterceptor`, el uso de `IFCMApi` y el
-   archivo `assets/serviceAccountKey.json`.
+2. ✅ App (Fase 4, rama `feature/payments` de `ADSv`): `NotificationProvider`
+   llama a ese endpoint; se eliminaron `FirebaseAuthProvider`,
+   `FCMAuthInterceptor`, `IFCMApi`, `RetrofitClient`, `AuthInterceptor` y
+   `google-auth-library`, y el build ignora `assets/serviceAccountKey.json`
+   (`androidResources.ignoreAssetsPattern`). Falta borrar la copia local del
+   archivo en cada equipo de desarrollo.
 3. **Revocar esa llave** en Google Cloud Console → IAM → Cuentas de servicio →
    Claves, y generar otra solo para el backend. Toda llave que haya salido en
    un APK debe considerarse comprometida.
@@ -126,7 +130,8 @@ Corrección:
 Versiones viejas de la app (sin los cambios 1 a 5) dejarán de mostrar las listas de
 solicitudes y de crear solicitudes en cuanto se publiquen las reglas.
 
-**Etapa 2 — con la Fase 4 (app que cotiza, paga, califica y notifica vía backend)**
+**Etapa 2 — con la Fase 4 (app que cotiza, paga, califica y notifica vía backend;
+rama `feature/payments` de `ADSv`)**
 - Publicar `database.rules.json` junto con esa versión de la app. Activa:
   cotización aceptada para iniciar el viaje, calificación y rating del
   trabajador solo desde el backend, y `Tokens` legible solo por su dueño.

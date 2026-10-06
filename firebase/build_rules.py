@@ -87,7 +87,11 @@ def build_requests(stage1):
 
     client_update = AND(
         f"auth.uid == {d('client_id')}",
-        OR(unchanged('status'), status_change('pending', 'cancelled')),
+        # Cancela mientras no haya precio acordado: en 'pending', o en 'accepted'
+        # con la cotización pendiente o rechazada
+        OR(unchanged('status'),
+           status_change('pending', 'cancelled'),
+           AND(status_change('accepted', 'cancelled'), f"{d('quote_status')} != 'accepted'")),
         client_rating_rule,
     )
 

@@ -38,14 +38,17 @@ Las reglas publicadas hoy tienen en la raíz `".read": true, ".write": true`:
     individual solo la leen su cliente y su trabajador.
   - El cliente crea solicitudes propias en `pending`, sin campos de cotización
     ni de pago.
-  - **`quoted_price`, `quote_status`, `payment_status`, `payment_reference` y
-    `payment_updated_at` solo los escribe el backend.**
+  - **Los campos de cotización (`quoted_price`, `quote_status`, `quoted_at`,
+    `quote_accepted_at`, `quote_rejection_reason`) y de pago (`payment_status`,
+    `payment_reference`, `payment_updated_at`) solo los escribe el backend.**
   - Transiciones de `status` por rol: el cliente solo cancela desde `pending`;
     el trabajador sigue `pending → accepted|rejected → on_the_way → in_progress → completed`,
     sin saltar estados. Nadie cambia `client_id` ni `worker_id`, ni borra solicitudes.
-  - Final: iniciar el viaje exige `quote_status == 'accepted'`; calificar exige
-    `status == 'completed'` y `payment_status == 'approved'`. Una calificación
-    no se edita después.
+  - Final: iniciar el viaje exige `quote_status == 'accepted'`, y la
+    calificación (`is_rated`, `client_rating`, `client_comment`, `rated_at`) solo
+    la escribe el backend (`POST /api/requests/<id>/rating/`, que exige el
+    servicio pagado y recalcula el promedio). Etapa 1: el cliente la escribe una
+    sola vez sobre un servicio completado.
 - `User/Clientes/<uid>`: solo su dueño.
 - `User/Trabajadores`: lo lee cualquier usuario con sesión (el cliente busca
   trabajadores). El trabajador edita su perfil, pero **no** su `rating`,
@@ -55,6 +58,10 @@ Las reglas publicadas hoy tienen en la raíz `".read": true, ".write": true`:
   `pending`, pero no cambiar `status` a `approved`/`rejected` ni escribir
   `reviewedBy`/`reviewedAt`.
 - `active_workers` (GeoFire) y `Tokens`: cada usuario escribe solo lo suyo.
+  Final: `Tokens/<uid>` solo lo lee su dueño, porque FCM sale del backend
+  (`POST /api/notifications/`); etapa 1: lo lee cualquier usuario con sesión.
+- Final: el rating del trabajador solo lo cambia el backend. Etapa 1: el cliente
+  puede sumar una calificación (`totalRatings + 1`, promedio entre 0 y 5).
 
 **Storage**
 - `worker_documents/<uid>/...`: solo el dueño; PDF/JPG/PNG de menos de 10 MB.
@@ -94,13 +101,14 @@ descomprima obtiene una credencial de servicio con la que se puede saltar todas
 las reglas de esta carpeta (el alcance `firebase.messaging` lo fija la app, no la
 llave).
 
-Corrección recomendada (prioridad alta, encaja con la Fase 3 de pagos, que ya
-abre el canal app → backend):
-1. Enviar las notificaciones desde el backend con `firebase_admin.messaging`
-   (endpoint autenticado con el Firebase ID token, o disparadas por el propio
-   backend al cambiar el estado de una solicitud o de un pago).
-2. Quitar de la app `FirebaseAuthProvider`, `FCMAuthInterceptor`, el uso de
-   `IFCMApi` y el archivo `assets/serviceAccountKey.json`.
+Corrección:
+1. ✅ Backend (Fase 3): `POST /api/notifications/` envía FCM con
+   `firebase_admin.messaging`, autenticado con el ID token de Firebase; el
+   servidor decide destinatario y texto y valida el rol de quien notifica. Las
+   notificaciones de cotización y pago las dispara el propio backend.
+2. Pendiente (Fase 4): que la app llame a ese endpoint y quitar
+   `FirebaseAuthProvider`, `FCMAuthInterceptor`, el uso de `IFCMApi` y el
+   archivo `assets/serviceAccountKey.json`.
 3. **Revocar esa llave** en Google Cloud Console → IAM → Cuentas de servicio →
    Claves, y generar otra solo para el backend. Toda llave que haya salido en
    un APK debe considerarse comprometida.
@@ -118,10 +126,10 @@ abre el canal app → backend):
 Versiones viejas de la app (sin los cambios 1 a 5) dejarán de mostrar las listas de
 solicitudes y de crear solicitudes en cuanto se publiquen las reglas.
 
-**Etapa 2 — con las fases 3 y 4 de pagos**
-- Publicar `database.rules.json` (activa las dos compuertas: cotización
-  aceptada para iniciar el viaje y pago aprobado para calificar) junto con la
-  versión de la app que ya cotiza y paga.
+**Etapa 2 — con la Fase 4 (app que cotiza, paga, califica y notifica vía backend)**
+- Publicar `database.rules.json` junto con esa versión de la app. Activa:
+  cotización aceptada para iniciar el viaje, calificación y rating del
+  trabajador solo desde el backend, y `Tokens` legible solo por su dueño.
 
 **En paralelo, lo antes posible**: corregir el hallazgo crítico (FCM en el backend y revocar la llave).
 
@@ -156,13 +164,11 @@ npm run test:stage1          # reglas de etapa 1
 
 ## Riesgos residuales conocidos
 
-- **Calificación del trabajador (interino)**: el cliente actualiza
-  `rating`/`totalRatings` del trabajador desde la app
-  (`RequestProvider.rateRequest`). Las reglas solo permiten sumar una
-  calificación cada vez (`totalRatings + 1`) con un promedio entre 0 y 5, pero no
-  pueden comprobar que el promedio sea correcto ni que venga de una solicitud
-  real. Lo correcto es que el backend recalcule el promedio al registrar la
-  calificación (Fase 3) y quitar esas tres excepciones de `build_rules.py`.
+- **Calificación del trabajador (solo etapa 1)**: con la app actual el cliente
+  actualiza `rating`/`totalRatings` desde el teléfono. Las reglas solo permiten
+  sumar una calificación cada vez con un promedio entre 0 y 5, pero no pueden
+  comprobar que sea correcto. Se resuelve en la etapa 2: el backend registra la
+  calificación y recalcula el promedio en una transacción.
 - **Datos de trabajadores visibles**: `User/Trabajadores` lo lee cualquier
   usuario con sesión, incluidos email y teléfono. Si se quiere minimizar, separar
   un perfil público (nombre, oficio, foto, rating) del privado.

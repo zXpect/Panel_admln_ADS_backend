@@ -92,6 +92,7 @@ test('nadie desde la app toca payment_status, quoted_price ni quote_status', asy
     await assertFails(update(ref(db(uid), `requests/${REQ}`), { payment_status: 'approved' }));
     await assertFails(update(ref(db(uid), `requests/${REQ}`), { quoted_price: 1 }));
     await assertFails(update(ref(db(uid), `requests/${REQ}`), { quote_status: 'accepted' }));
+    await assertFails(update(ref(db(uid), `requests/${REQ}`), { quote_rejection_reason: 'x' }));
     await assertFails(set(ref(db(uid), `requests/${REQ}/quoted_price`), null));
   }
 });
@@ -122,16 +123,19 @@ test('trabajador no salta estados ni reasigna la solicitud', async () => {
 });
 
 // ---------- requests: calificación ----------
-test('calificar exige completado y pagado; luego no se edita', async () => {
-  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'completed' }));
+test('calificación: etapa 1 la escribe el cliente; final solo el backend', async () => {
   const rating = { is_rated: true, client_rating: 5, client_comment: 'ok', rated_at: 5 };
-  if (!STAGE1) {
-    await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), rating));
-  }
-  await admin((d) => update(ref(d, `requests/${REQ}`), { payment_status: 'approved' }));
+  await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), rating));  // sin completar
+  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'completed', payment_status: 'approved' }));
   await assertFails(update(ref(db(WORKER), `requests/${REQ}`), rating));
-  await assertSucceeds(update(ref(db(CLIENT), `requests/${REQ}`), rating));
-  await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { client_rating: 1 }));
+  await gated(update(ref(db(CLIENT), `requests/${REQ}`), rating));
+  if (STAGE1) {
+    await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { client_rating: 1 }));
+  }
+});
+test('no se crea una solicitud ya calificada', async () => {
+  await assertFails(set(ref(db(CLIENT), 'requests/new6'), baseRequest({ is_rated: true })));
+  await assertFails(set(ref(db(CLIENT), 'requests/new7'), baseRequest({ client_rating: 5 })));
 });
 
 // ---------- User/Trabajadores ----------
@@ -147,9 +151,9 @@ test('registro de trabajador nuevo con rating 0', async () => {
   await assertSucceeds(set(ref(db('worker9'), 'User/Trabajadores/worker9'), { name: 'N', rating: 0, totalRatings: 0 }));
   await assertFails(set(ref(db('worker8'), 'User/Trabajadores/worker8'), { name: 'N', rating: 5, totalRatings: 10 }));
 });
-test('cliente actualiza promedio solo sumando una calificación (interino)', async () => {
+test('promedio del trabajador: interino en etapa 1, solo backend en final', async () => {
   const w = `User/Trabajadores/${WORKER}`;
-  await assertSucceeds(update(ref(db(CLIENT), w), { rating: 4.3, totalRatings: 3, timestamp: 9 }));
+  await gated(update(ref(db(CLIENT), w), { rating: 4.3, totalRatings: 3, timestamp: 9 }));
   await assertFails(update(ref(db(CLIENT), w), { rating: 5, totalRatings: 10 }));
   await assertFails(update(ref(db(CLIENT), w), { name: 'hack' }));
   await assertFails(update(ref(db(CLIENT), w), { 'verificationStatus/status': 'approved' }));
@@ -164,9 +168,11 @@ test('datos de clientes solo para su dueño', async () => {
   await assertFails(get(ref(db(WORKER), `User/Clientes/${CLIENT}`)));
   await assertFails(get(ref(db(CLIENT), 'User/Clientes')));
 });
-test('tokens: cada quien escribe el suyo', async () => {
+test('tokens: cada quien escribe el suyo; en final solo el dueño los lee', async () => {
   await assertSucceeds(set(ref(db(CLIENT), `Tokens/${CLIENT}/token`), 't'));
   await assertFails(set(ref(db(CLIENT), `Tokens/${WORKER}/token`), 't'));
+  await assertSucceeds(get(ref(db(CLIENT), `Tokens/${CLIENT}`)));
+  await gated(get(ref(db(WORKER), `Tokens/${CLIENT}`)));
 });
 test('trabajador no aprueba sus propios documentos', async () => {
   const hv = `WorkerDocuments/${WORKER}/hojaDeVida`;

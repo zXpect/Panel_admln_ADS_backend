@@ -1,11 +1,14 @@
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 
 from firebase_admin import messaging
 
 from worker_verification.services.firebase_service import firebase_service
 
 logger = logging.getLogger(__name__)
+
+COLOMBIA_TZ = timezone(timedelta(hours=-5))
 
 
 class NotificationService:
@@ -86,6 +89,23 @@ class NotificationService:
             data.update(title='Cotización rechazada', body='El cliente rechazó tu cotización. Puedes enviar una nueva')
             return worker_id, data
 
+        if notification_type == 'request_rescheduled':
+            data.update(
+                title='Servicio reprogramado',
+                body=f"{worker_name} cambió la hora de llegada al {format_schedule(request.get('scheduled_at'))}. "
+                     'Si no te sirve, puedes cancelar la solicitud',
+            )
+            return client_id, data
+
+        if notification_type == 'request_cancelled':
+            # Se avisa a la otra parte
+            if request.get('cancelled_by') == 'worker':
+                data.update(title='Solicitud cancelada', body=f"{worker_name} canceló la solicitud")
+                return client_id, data
+            client_name = request.get('client_name') or 'El cliente'
+            data.update(title='Solicitud cancelada', body=f"{client_name} canceló la solicitud")
+            return worker_id, data
+
         if notification_type == 'payment_approved':
             data.update(title='Pago recibido', body='El cliente pagó el servicio')
             return worker_id, data
@@ -136,6 +156,15 @@ def format_cop(value):
         return '$' + f"{int(value):,}".replace(',', '.')
     except (TypeError, ValueError):
         return '$0'
+
+
+def format_schedule(timestamp_ms):
+    """'15/10 a las 14:30' en hora de Colombia (UTC−5, sin horario de verano)."""
+    try:
+        moment = datetime.fromtimestamp(int(timestamp_ms) / 1000, tz=COLOMBIA_TZ)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return 'nuevo horario'
+    return moment.strftime('%d/%m a las %H:%M')
 
 
 notification_service = NotificationService()

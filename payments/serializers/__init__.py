@@ -8,6 +8,8 @@ from .payment_serializers import (
 
 from .service_request_serializers import (
     ServiceRequestCreateSerializer,
+    ScheduleSerializer,
+    CancelSerializer,
     QuoteSubmitSerializer,
     QuoteRejectSerializer,
     RatingSerializer,
@@ -24,6 +26,8 @@ __all__ = [
 
     # Service request serializers
     'ServiceRequestCreateSerializer',
+    'ScheduleSerializer',
+    'CancelSerializer',
     'QuoteSubmitSerializer',
     'QuoteRejectSerializer',
     'RatingSerializer',

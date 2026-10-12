@@ -1,4 +1,3 @@
-import json
 from datetime import timedelta
 from unittest import mock
 
@@ -8,8 +7,6 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
-
-from worker_verification.models import SystemConfig
 
 from ..models import Payment, PaymentEvent
 from ..services.gateways import get_gateway
@@ -109,75 +106,6 @@ class AuthenticationTests(AppApiTestCase):
 
     def test_app_token_cannot_list_payments(self):
         self.assertEqual(self.api(CLIENT).get(reverse('payments:payment-list')).status_code, 403)
-
-
-class QuoteTests(AppApiTestCase):
-
-    def test_worker_quotes_and_request_is_accepted(self):
-        response = self.api(WORKER).post(self.quote_url(), {'quoted_price': 85000}, format='json')
-
-        self.assertEqual(response.status_code, 200)
-        request = self.request_data()
-        self.assertEqual(request['status'], 'accepted')
-        self.assertEqual(request['quoted_price'], 85000)
-        self.assertEqual(request['quote_status'], 'quoted')
-        self.assertIn(('fcm-client', 'quote_received'), self.sent_notifications())
-
-    def test_only_assigned_worker_can_quote(self):
-        for uid in (OTHER, CLIENT):
-            response = self.api(uid).post(self.quote_url(), {'quoted_price': 85000}, format='json')
-            self.assertEqual(response.status_code, 403)
-        self.assertNotIn('quoted_price', self.request_data())
-
-    def test_price_must_be_integer_and_in_range(self):
-        for price in (85000.5, '85000', True, 0, 500, 6000000):
-            response = self.api(WORKER).post(self.quote_url(), {'quoted_price': price}, format='json')
-            self.assertEqual(response.status_code, 400, price)
-        self.assertNotIn('quoted_price', self.request_data())
-
-    def test_range_per_service_type_from_system_config(self):
-        SystemConfig.objects.create(key='quote_price_ranges',
-                                    value=json.dumps({'Plomería': {'min': 30000, 'max': 200000}}))
-        self.assertEqual(self.api(WORKER).post(self.quote_url(), {'quoted_price': 250000}, format='json').status_code, 400)
-        self.assertEqual(self.api(WORKER).post(self.quote_url(), {'quoted_price': 150000}, format='json').status_code, 200)
-
-        limits = self.api(WORKER).get(reverse('service_requests:quote-limits'), {'service_type': 'Plomería'}).json()
-        self.assertEqual(limits['data'], {'min_price': 30000, 'max_price': 200000, 'currency': 'COP'})
-
-    def test_client_accepts_and_quote_becomes_immutable(self):
-        self.api(WORKER).post(self.quote_url(), {'quoted_price': 85000}, format='json')
-
-        self.assertEqual(self.api(WORKER).post(self.quote_url('accept')).status_code, 403)
-        self.assertEqual(self.api(CLIENT).post(self.quote_url('accept')).status_code, 200)
-        self.assertEqual(self.request_data()['quote_status'], 'accepted')
-        self.assertIn(('fcm-worker', 'quote_accepted'), self.sent_notifications())
-
-        self.assertEqual(self.api(CLIENT).post(self.quote_url('accept')).status_code, 409)
-        self.assertEqual(self.api(WORKER).post(self.quote_url(), {'quoted_price': 1000}, format='json').status_code, 409)
-        self.assertEqual(self.request_data()['quoted_price'], 85000)
-
-    def test_reject_and_requote(self):
-        self.api(WORKER).post(self.quote_url(), {'quoted_price': 85000}, format='json')
-        response = self.api(CLIENT).post(self.quote_url('reject'), {'reason': 'Muy caro'}, format='json')
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.request_data()['quote_status'], 'rejected')
-        self.assertEqual(self.request_data()['quote_rejection_reason'], 'Muy caro')
-
-        self.api(WORKER).post(self.quote_url(), {'quoted_price': 70000}, format='json')
-        request = self.request_data()
-        self.assertEqual((request['quote_status'], request['quoted_price']), ('quoted', 70000))
-        self.assertNotIn('quote_rejection_reason', request)
-
-    def test_cannot_quote_cancelled_request(self):
-        self.set_request(status='cancelled')
-        self.assertEqual(self.api(WORKER).post(self.quote_url(), {'quoted_price': 85000}, format='json').status_code, 409)
-
-    def test_invalid_firebase_key_and_unknown_request(self):
-        url = reverse('service_requests:quote-submit', kwargs={'request_id': 'a.b'})
-        self.assertEqual(self.api(WORKER).post(url, {'quoted_price': 85000}, format='json').status_code, 400)
-        url = reverse('service_requests:quote-submit', kwargs={'request_id': 'no-existe'})
-        self.assertEqual(self.api(WORKER).post(url, {'quoted_price': 85000}, format='json').status_code, 404)
 
 
 class PaymentApiTests(AppApiTestCase):

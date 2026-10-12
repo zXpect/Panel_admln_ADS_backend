@@ -105,6 +105,9 @@ class ServiceRequestCreateTests(AppApiTestCase):
         self.assertEqual(self.create(service_category='electricidad', task_items=[
             {'task': 'breaker-falla-simple', 'quantity': 1}]).status_code, 201)
 
+        self.fb.set_data(f"User/Trabajadores/{WORKER}/work", 'Plomero')
+        self.assertEqual(self.create().status_code, 201)
+
         self.fb.set_data(f"User/Trabajadores/{WORKER}/work", 'Ferretería')
         self.assertEqual(self.create().status_code, 409)
 

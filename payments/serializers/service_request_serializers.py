@@ -1,3 +1,5 @@
+import time
+
 from rest_framework import serializers
 
 from pricing.serializers import EstimateSerializer
@@ -32,8 +34,68 @@ class ServiceRequestCreateSerializer(EstimateSerializer):
         return value
 
 
-class QuoteSubmitSerializer(serializers.Serializer):
+def _now_ms():
+    return int(time.time() * 1000)
+
+
+# Motivos del ajuste de la cotización (D5) y de la cancelación (D8)
+ADJUSTMENT_REASONS = ('materiales', 'dificultad', 'tiempo', 'condiciones_lugar', 'otro')
+CANCELLATION_REASONS = {
+    'client': ('ya_no_lo_necesito', 'encontre_otra_opcion', 'precio', 'horario', 'otro'),
+    'worker': ('no_disponible', 'fuera_de_zona', 'trabajo_no_corresponde', 'otro'),
+}
+OTHER_REASON = 'otro'
+MAX_REASON_TEXT = 300
+
+
+def require_text_with_other(code, text, text_field):
+    """El texto del motivo es obligatorio solo con «otro» (D5, D8)."""
+    if code == OTHER_REASON and not text:
+        raise serializers.ValidationError({text_field: ['Describe el motivo cuando eliges «otro»']})
+
+
+class ScheduleSerializer(serializers.Serializer):
+    """Agenda del servicio (D9): llegada futura, dentro de 30 días, y duración estimada."""
+    MAX_DAYS_AHEAD = 30
+
+    scheduled_at = StrictIntegerField(help_text='Fecha y hora de llegada (ms desde 1970, UTC)')
+    estimated_duration_min = StrictIntegerField(min_value=15, max_value=720)
+
+    def validate_scheduled_at(self, value):
+        now = _now_ms()
+        if value <= now:
+            raise serializers.ValidationError('La fecha y hora de llegada debe ser futura')
+        if value > now + self.MAX_DAYS_AHEAD * 24 * 60 * 60 * 1000:
+            raise serializers.ValidationError(f'La fecha de llegada debe estar dentro de los próximos {self.MAX_DAYS_AHEAD} días')
+        return value
+
+
+class QuoteSubmitSerializer(ScheduleSerializer):
+    """
+    Cotización del trabajador. Si el motivo hace falta (precio ajustado) lo
+    decide el servicio con el quote_reference congelado de la solicitud.
+    """
     quoted_price = StrictIntegerField(min_value=1, help_text='Precio en pesos COP (entero)')
+    adjustment_reason_code = serializers.ChoiceField(
+        choices=ADJUSTMENT_REASONS, required=False, allow_blank=True, default='')
+    adjustment_reason_text = serializers.CharField(
+        max_length=MAX_REASON_TEXT, required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        require_text_with_other(attrs['adjustment_reason_code'], attrs['adjustment_reason_text'],
+                                'adjustment_reason_text')
+        return attrs
+
+
+class CancelSerializer(serializers.Serializer):
+    """Motivo de la cancelación; si el código vale para el rol lo valida el servicio."""
+    reason_code = serializers.ChoiceField(choices=sorted({code for codes in CANCELLATION_REASONS.values()
+                                                          for code in codes}))
+    reason_text = serializers.CharField(max_length=MAX_REASON_TEXT, required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        require_text_with_other(attrs['reason_code'], attrs['reason_text'], 'reason_text')
+        return attrs
 
 
 class QuoteRejectSerializer(serializers.Serializer):

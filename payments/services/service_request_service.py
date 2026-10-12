@@ -1,4 +1,3 @@
-import json
 import logging
 import time
 
@@ -6,9 +5,9 @@ from pricing.models import ServiceCategory
 from pricing.services import pricing_service
 from pricing.services.pricing_service import json_number
 from pricing.services.worker_categories import worker_categories
-from worker_verification.models import SystemConfig
 from worker_verification.services.firebase_service import firebase_service
 
+from ..serializers.service_request_serializers import CANCELLATION_REASONS, OTHER_REASON
 from .notification_service import notification_service
 
 logger = logging.getLogger(__name__)
@@ -25,6 +24,12 @@ class ServiceRequestError(Exception):
 
 def _now_ms():
     return int(time.time() * 1000)
+
+
+def _drop_none(request):
+    """Firebase no guarda nulos: un campo en None se elimina de la solicitud."""
+    for key in [key for key, value in request.items() if value is None]:
+        del request[key]
 
 
 class ServiceRequestService:
@@ -44,13 +49,6 @@ class ServiceRequestService:
     QUOTE_ACCEPTED = 'accepted'
     QUOTE_REJECTED = 'rejected'
 
-    # Claves en SystemConfig (configurables desde el admin de Django)
-    CONFIG_MIN_PRICE = 'quote_min_price_cop'
-    CONFIG_MAX_PRICE = 'quote_max_price_cop'
-    CONFIG_PRICE_RANGES = 'quote_price_ranges'   # JSON: {"Plomería": {"min": 20000, "max": 800000}}
-    DEFAULT_MIN_PRICE = 1000
-    DEFAULT_MAX_PRICE = 5000000
-
     MAX_REJECTION_REASON = 200
     MAX_RATING_COMMENT = 500
 
@@ -68,34 +66,17 @@ class ServiceRequestService:
 
     # ---------- límites de precio ----------
 
-    @staticmethod
-    def _config_int(key, default):
-        config = SystemConfig.objects.filter(key=key).first()
-        try:
-            return int(config.value) if config else default
-        except (TypeError, ValueError):
-            logger.error(f"Invalid SystemConfig value for {key}")
-            return default
-
     def get_quote_limits(self, service_type=None):
         """
-        Rango permitido (COP) para una cotización. Si el tipo de servicio tiene
-        un rango propio en SystemConfig se usa; si no, el rango global.
+        Rango permitido (COP) para una cotización: de la tarifa mínima por
+        visita al tope técnico (D4, D6). `service_type` se ignora; se conserva
+        la firma por la app anterior (GET /api/requests/quote-limits/).
         """
-        min_price = self._config_int(self.CONFIG_MIN_PRICE, self.DEFAULT_MIN_PRICE)
-        max_price = self._config_int(self.CONFIG_MAX_PRICE, self.DEFAULT_MAX_PRICE)
-
-        ranges_config = SystemConfig.objects.filter(key=self.CONFIG_PRICE_RANGES).first()
-        if ranges_config and service_type:
-            try:
-                ranges = json.loads(ranges_config.value)
-                service_range = ranges.get(service_type) or {}
-                min_price = int(service_range.get('min', min_price))
-                max_price = int(service_range.get('max', max_price))
-            except (TypeError, ValueError, AttributeError):
-                logger.error(f"Invalid SystemConfig value for {self.CONFIG_PRICE_RANGES}")
-
-        return {'min_price': min_price, 'max_price': max_price, 'currency': 'COP'}
+        return {
+            'min_price': pricing_service.min_visit_fee_cop(),
+            'max_price': pricing_service.max_price_cop(),
+            'currency': 'COP',
+        }
 
     # ---------- creación ----------
 
@@ -186,11 +167,15 @@ class ServiceRequestService:
 
     # ---------- cotización ----------
 
-    def submit_quote(self, worker_uid, request_id, quoted_price):
+    def submit_quote(self, worker_uid, request_id, quote):
         """
-        El trabajador cotiza (o vuelve a cotizar tras un rechazo). Si la
-        solicitud estaba en 'pending', cotizar equivale a aceptarla.
+        El trabajador cotiza y agenda (o vuelve a cotizar tras un rechazo). Si
+        la solicitud estaba en 'pending', cotizar equivale a aceptarla.
+        `quote` es el validated_data de QuoteSubmitSerializer.
         """
+        quoted_price = quote['quoted_price']
+        reason_code = quote['adjustment_reason_code']
+
         def update(request):
             if request.get('worker_id') != worker_uid:
                 raise ServiceRequestError('Solo el trabajador asignado puede cotizar', 403)
@@ -199,10 +184,18 @@ class ServiceRequestService:
             if request.get('quote_status') == self.QUOTE_ACCEPTED:
                 raise ServiceRequestError('La cotización ya fue aceptada y no se puede cambiar', 409)
 
-            limits = self.get_quote_limits(request.get('service_type'))
-            if not limits['min_price'] <= quoted_price <= limits['max_price']:
+            limits = self.get_quote_limits()
+            if quoted_price < limits['min_price']:
                 raise ServiceRequestError(
-                    f"El precio debe estar entre {limits['min_price']} y {limits['max_price']} COP", 400)
+                    f"El precio debe ser de al menos {limits['min_price']} COP (tarifa mínima por visita)", 400)
+            if quoted_price > limits['max_price']:
+                raise ServiceRequestError('El precio supera el máximo permitido', 400)
+
+            adjusted = self.is_adjusted_price(request.get('quote_reference'), quoted_price)
+            if adjusted and not reason_code:
+                raise ServiceRequestError(
+                    'Indica el motivo del ajuste: el precio está fuera del rango de referencia '
+                    'o hay ítems sin rango', 400)
 
             now = _now_ms()
             if request.get('status') == 'pending':
@@ -210,13 +203,34 @@ class ServiceRequestService:
             request['quoted_price'] = quoted_price
             request['quote_status'] = self.QUOTE_QUOTED
             request['quoted_at'] = now
+            request['quote_is_adjusted'] = adjusted
+            # Sin ajuste no se guarda motivo; el texto solo acompaña a «otro» (D5)
+            request['quote_adjustment_reason_code'] = reason_code if adjusted else None
+            request['quote_adjustment_reason_text'] = (
+                quote['adjustment_reason_text'] if adjusted and reason_code == OTHER_REASON else None)
+            request['scheduled_at'] = quote['scheduled_at']
+            request['estimated_duration_min'] = quote['estimated_duration_min']
             request['last_updated'] = now
             request.pop('quote_rejection_reason', None)
+            _drop_none(request)
 
         request = self._transact_request(request_id, update)
         logger.info(f"Quote submitted for request {request_id}: {quoted_price} COP")
         self.notifications.notify('quote_received', request_id, request)
         return request
+
+    @staticmethod
+    def is_adjusted_price(quote_reference, quoted_price):
+        """
+        Verdadero si hay ítems sin rango o el precio queda fuera de [min_cop, max_cop].
+        Una solicitud anterior al catálogo (sin quote_reference) cuenta como todo sin rango.
+        """
+        if not isinstance(quote_reference, dict) or quote_reference.get('has_unpriced_items', True):
+            return True
+        min_cop, max_cop = quote_reference.get('min_cop'), quote_reference.get('max_cop')
+        if min_cop is None or max_cop is None:
+            return True
+        return not min_cop <= quoted_price <= max_cop
 
     def accept_quote(self, client_uid, request_id):
         def update(request):
@@ -250,6 +264,69 @@ class ServiceRequestService:
             raise ServiceRequestError('La solicitud no está esperando respuesta a una cotización', 409)
         if request.get('quote_status') != self.QUOTE_QUOTED:
             raise ServiceRequestError('No hay una cotización pendiente de respuesta', 409)
+
+    # ---------- agenda ----------
+
+    def reschedule(self, worker_uid, request_id, schedule):
+        """El trabajador cambia la fecha, la hora o la duración (D9); se avisa al cliente."""
+        def update(request):
+            if request.get('worker_id') != worker_uid:
+                raise ServiceRequestError('Solo el trabajador asignado puede reprogramar', 403)
+            if request.get('status') != 'accepted':
+                raise ServiceRequestError('Solo se puede reprogramar una solicitud aceptada que no ha iniciado', 409)
+
+            now = _now_ms()
+            request['scheduled_at'] = schedule['scheduled_at']
+            request['estimated_duration_min'] = schedule['estimated_duration_min']
+            request['rescheduled_at'] = now
+            request['reschedule_count'] = int(request.get('reschedule_count') or 0) + 1
+            request['last_updated'] = now
+
+        request = self._transact_request(request_id, update)
+        logger.info(f"Request {request_id} rescheduled ({request['reschedule_count']})")
+        self.notifications.notify('request_rescheduled', request_id, request)
+        return request
+
+    # ---------- cancelación ----------
+
+    CANCELLABLE_STATUSES = ('pending', 'accepted')
+    STARTED_STATUSES = ('on_the_way', 'in_progress', 'completed')
+
+    def cancel(self, uid, request_id, reason_code, reason_text=''):
+        """
+        Cliente o trabajador cancelan sin cobro antes de «Iniciar viaje» (D8).
+        Desde on_the_way el caso se tramita como PQR.
+        """
+        def update(request):
+            if uid == request.get('client_id'):
+                role = 'client'
+            elif uid == request.get('worker_id'):
+                role = 'worker'
+            else:
+                raise ServiceRequestError('No participas en esta solicitud', 403)
+
+            status = request.get('status')
+            if status in self.STARTED_STATUSES:
+                raise ServiceRequestError(
+                    'El servicio ya inició y no se puede cancelar; tramítalo como PQR', 409)
+            if status not in self.CANCELLABLE_STATUSES:
+                raise ServiceRequestError('La solicitud ya está cerrada', 409)
+            if reason_code not in CANCELLATION_REASONS[role]:
+                raise ServiceRequestError('Motivo de cancelación no válido para tu rol', 400)
+
+            now = _now_ms()
+            request['status'] = 'cancelled'
+            request['cancelled_by'] = role
+            request['cancellation_reason_code'] = reason_code
+            request['cancellation_reason_text'] = reason_text if reason_code == OTHER_REASON else None
+            request['cancelled_at'] = now
+            request['last_updated'] = now
+            _drop_none(request)
+
+        request = self._transact_request(request_id, update)
+        logger.info(f"Request {request_id} cancelled by {request['cancelled_by']}")
+        self.notifications.notify('request_cancelled', request_id, request)
+        return request
 
     # ---------- calificación ----------
 

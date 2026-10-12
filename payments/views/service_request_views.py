@@ -5,10 +5,12 @@ from rest_framework.views import APIView
 
 from ..permissions import IsAppUser
 from ..serializers import (
+    CancelSerializer,
     NotificationSerializer,
     QuoteRejectSerializer,
     QuoteSubmitSerializer,
     RatingSerializer,
+    ScheduleSerializer,
     ServiceRequestCreateSerializer,
 )
 from ..services.notification_service import notification_service
@@ -92,7 +94,11 @@ class ServiceRequestCreateView(APIView):
 class QuoteSubmitView(AppServiceRequestView):
     """
     POST /api/requests/<request_id>/quote/   (trabajador)
-    Body: {"quoted_price": 85000}   (pesos COP, entero)
+    Body: {"quoted_price": 85000, "adjustment_reason_code": "materiales",
+           "adjustment_reason_text": "", "scheduled_at": 1792155600000,
+           "estimated_duration_min": 90}
+    El motivo es obligatorio si hay ítems sin rango o el precio sale del
+    rango de referencia congelado; el texto, solo con «otro».
     """
 
     def post(self, request, request_id):
@@ -102,8 +108,63 @@ class QuoteSubmitView(AppServiceRequestView):
 
         def action():
             updated = service_request_service.submit_quote(
-                request.user.uid, request_id, serializer.validated_data['quoted_price'])
+                request.user.uid, request_id, serializer.validated_data)
             return Response({'success': True, 'data': _quote_data(request_id, updated)}, status=status.HTTP_200_OK)
+
+        return self.run(request_id, action)
+
+
+class ScheduleView(AppServiceRequestView):
+    """
+    POST /api/requests/<request_id>/schedule/   (trabajador)
+    Body: {"scheduled_at": 1792159800000, "estimated_duration_min": 90}
+    Reprograma una solicitud aceptada y avisa al cliente.
+    """
+
+    def post(self, request, request_id):
+        serializer = ScheduleSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        def action():
+            updated = service_request_service.reschedule(request.user.uid, request_id, serializer.validated_data)
+            return Response({
+                'success': True,
+                'data': {
+                    'request_id': request_id,
+                    'scheduled_at': updated['scheduled_at'],
+                    'estimated_duration_min': updated['estimated_duration_min'],
+                    'reschedule_count': updated['reschedule_count'],
+                }
+            }, status=status.HTTP_200_OK)
+
+        return self.run(request_id, action)
+
+
+class CancelView(AppServiceRequestView):
+    """
+    POST /api/requests/<request_id>/cancel/   (cliente o trabajador)
+    Body: {"reason_code": "horario", "reason_text": ""}
+    Solo antes de «Iniciar viaje»; después responde 409 (PQR).
+    """
+
+    def post(self, request, request_id):
+        serializer = CancelSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        def action():
+            updated = service_request_service.cancel(
+                request.user.uid, request_id,
+                serializer.validated_data['reason_code'], serializer.validated_data['reason_text'])
+            return Response({
+                'success': True,
+                'data': {
+                    'request_id': request_id,
+                    'status': updated['status'],
+                    'cancelled_by': updated['cancelled_by'],
+                }
+            }, status=status.HTTP_200_OK)
 
         return self.run(request_id, action)
 

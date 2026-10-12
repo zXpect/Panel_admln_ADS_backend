@@ -1,11 +1,17 @@
 import unicodedata
 
-# Valores del campo viejo `work` que no coinciden con un slug (PLAN_CATALOGO_TAREAS.md §7).
+# Valores del campo viejo `work` que no coinciden con un slug (PLAN_CATALOGO_TAREAS.md §7,
+# más los nombres de persona que aparecen en los datos reales, como «Plomero» o «Carpintero»).
 # Plomería, Albañilería, Jardinería, Carpintería y Cerrajería coinciden con el slug
 # al quitar tildes y mayúsculas. Ferretería no tiene oficio: revisión manual.
 LEGACY_WORK_TO_CATEGORY = {
     'electricista': 'electricidad',
+    'plomero': 'plomeria',
     'pintor': 'pintura',
+    'albanil': 'albanileria',
+    'cerrajero': 'cerrajeria',
+    'jardinero': 'jardineria',
+    'carpintero': 'carpinteria',
 }
 
 

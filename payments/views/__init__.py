@@ -3,6 +3,8 @@ from .mock_checkout_views import MockCheckoutView
 from .payment_views import PaymentListCreateView, PaymentDetailView
 from .service_request_views import (
     ServiceRequestCreateView,
+    ScheduleView,
+    CancelView,
     QuoteSubmitView,
     QuoteAcceptView,
     QuoteRejectView,
@@ -17,6 +19,8 @@ __all__ = [
     'PaymentListCreateView',
     'PaymentDetailView',
     'ServiceRequestCreateView',
+    'ScheduleView',
+    'CancelView',
     'QuoteSubmitView',
     'QuoteAcceptView',
     'QuoteRejectView',

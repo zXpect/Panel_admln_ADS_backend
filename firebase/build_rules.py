@@ -224,7 +224,9 @@ def build_document_review_fields():
     return {
         "status": {".validate": "newData.val() == data.val() || newData.val() == 'pending'"},
         "reviewedBy": {".validate": "newData.val() == data.val()"},
-        "reviewedAt": {".validate": "newData.val() == data.val()"},
+        # La app escribe reviewedAt = 0 (sin revisar) al subir o resubir
+        # (WorkerDocument.toMap); otro valor solo lo pone el panel
+        "reviewedAt": {".validate": "newData.val() == data.val() || newData.val() == 0"},
     }
 
 

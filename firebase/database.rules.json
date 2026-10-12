@@ -49,7 +49,7 @@
             ".validate": "newData.val() == data.val()"
           },
           "reviewedAt": {
-            ".validate": "newData.val() == data.val()"
+            ".validate": "newData.val() == data.val() || newData.val() == 0"
           },
           "$subcategory": {
             "$documentId": {
@@ -60,7 +60,7 @@
                 ".validate": "newData.val() == data.val()"
               },
               "reviewedAt": {
-                ".validate": "newData.val() == data.val()"
+                ".validate": "newData.val() == data.val() || newData.val() == 0"
               }
             }
           }

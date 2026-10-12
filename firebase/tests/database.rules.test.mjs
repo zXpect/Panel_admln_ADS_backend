@@ -233,6 +233,24 @@ test('trabajador no aprueba sus propios documentos', async () => {
   await assertSucceeds(update(ref(db(WORKER), hv), { status: 'pending', fileName: 'cv2.pdf' }));
 });
 
+test('documento como lo escribe la app (WorkerDocument.toMap con reviewedAt 0)', async () => {
+  const appDoc = (fileName) => ({
+    status: 'pending', fileName, reviewedAt: 0, reviewedBy: null, rejectionReason: null, uploadedAt: 5,
+  });
+  const hv = `WorkerDocuments/${WORKER}/hojaDeVida`;
+  const titulo = `WorkerDocuments/${WORKER}/certificaciones/titulos/doc1`;
+  // Trabajador nuevo, sin documentos previos
+  await assertSucceeds(set(ref(db(WORKER), hv), appDoc('cv.pdf')));
+  await assertSucceeds(set(ref(db(WORKER), titulo), appDoc('t.pdf')));
+  // Resubir después de un rechazo del panel
+  await admin((d) => update(ref(d, hv), { status: 'rejected', reviewedBy: 'admin', reviewedAt: 7 }));
+  await assertSucceeds(set(ref(db(WORKER), hv), appDoc('cv2.pdf')));
+  // Sigue sin poder fingir una revisión
+  await assertFails(set(ref(db(WORKER), hv), { ...appDoc('cv3.pdf'), reviewedAt: 99 }));
+  await assertFails(set(ref(db(WORKER), hv), { ...appDoc('cv3.pdf'), reviewedBy: 'yo' }));
+  await assertFails(set(ref(db(WORKER), hv), { ...appDoc('cv3.pdf'), status: 'approved' }));
+});
+
 test('documentos y ubicación: solo el dueño escribe', async () => {
   await assertSucceeds(set(ref(db(WORKER), `WorkerDocuments/${WORKER}/hojaDeVida`), { status: 'pending' }));
   await assertFails(get(ref(db(CLIENT), `WorkerDocuments/${WORKER}`)));

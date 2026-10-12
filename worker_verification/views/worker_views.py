@@ -2,7 +2,9 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
 from ..services.worker_service import worker_service
+from ..services.audit_service import audit_service
 from ..serializers import (
     WorkerSerializer,
     WorkerUpdateSerializer,
@@ -294,28 +296,39 @@ class WorkerViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["patch"], url_path="verification_status")
     def update_verification_status(self, request, pk=None):
         """
-        Actualiza el estado de verificación de un trabajador
+        Actualiza el estado de verificación de un trabajador y registra el
+        cambio en VerificationLog con el administrador autenticado como revisor
         """
         serializer = WorkerVerificationStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        worker = worker_service.get_worker_by_id(pk)
-        if not worker:
-            return Response({"error": "Worker not found"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            worker = worker_service.get_worker_by_id(pk)
+            if not worker:
+                return Response({"error": "Worker not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # estado actual
-        current_status = worker.get("verificationStatus", {})
+            # estado actual
+            current_status = worker.get("verificationStatus", {})
 
-    # Solo actualizar status, conservar lo demás (ej: submittedAt)
-        updated_status = {**current_status, **serializer.validated_data}
+            # Solo actualizar status, conservar lo demás (ej: submittedAt)
+            updated_status = {**current_status, **serializer.validated_data}
 
-        worker["verificationStatus"] = updated_status
-        worker_service.update_worker(pk, worker)
+            worker["verificationStatus"] = updated_status
 
-        return Response({
-        "message": "Verification status updated successfully",
-        "verificationStatus": updated_status
-    })
+            # Si Firebase falla, el log se revierte
+            with transaction.atomic():
+                audit_service.log_worker_status_change(request.user, pk, updated_status["status"])
+                worker_service.update_worker(pk, worker)
+
+            return Response({
+                "message": "Verification status updated successfully",
+                "verificationStatus": updated_status
+            })
+        except Exception:
+            logger.exception(f"Error updating verification status of worker {pk}")
+            return Response({
+                "error": "No se pudo actualizar el estado de verificación. Intenta de nuevo más tarde."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['patch'])
     def location(self, request, pk=None):

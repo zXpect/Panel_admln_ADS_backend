@@ -207,15 +207,15 @@ class DocumentViewSet(viewsets.ViewSet):
     def approve_document(self, request):
         """
         POST /api/documents/approve/
-        Aprueba un documento
+        Aprueba un documento. El revisor es el administrador autenticado
+        (request.user); un `reviewerId` en el cuerpo se ignora.
         
         Body:
         {
             "workerId": "worker123",
             "category": "hojaDeVida",
             "subcategory": null,
-            "documentId": "doc123",
-            "reviewerId": "admin123"
+            "documentId": "doc123"
         }
         """
         try:
@@ -225,15 +225,12 @@ class DocumentViewSet(viewsets.ViewSet):
             subcategory = request.data.get('subcategory')
             document_id = request.data.get('documentId')
             
-            # Validar reviewerId
             serializer = DocumentApprovalSerializer(data=request.data)
             if not serializer.is_valid():
                 return Response({
                     'success': False,
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-            reviewer_id = serializer.validated_data['reviewerId']
             
             if not all([worker_id, category, document_id]):
                 return Response({
@@ -246,7 +243,7 @@ class DocumentViewSet(viewsets.ViewSet):
                 category,
                 subcategory,
                 document_id,
-                reviewer_id
+                request.user
             )
             
             return Response({
@@ -254,18 +251,19 @@ class DocumentViewSet(viewsets.ViewSet):
                 'message': 'Documento aprobado exitosamente'
             }, status=status.HTTP_200_OK)
             
-        except Exception as e:
-            logger.error(f"Error approving document: {str(e)}")
+        except Exception:
+            logger.exception("Error approving document")
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'No se pudo aprobar el documento. Intenta de nuevo más tarde.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'], url_path='reject')
     def reject_document(self, request):
         """
         POST /api/documents/reject/
-        Rechaza un documento
+        Rechaza un documento. El revisor es el administrador autenticado
+        (request.user); un `reviewerId` en el cuerpo se ignora.
         
         Body:
         {
@@ -273,7 +271,6 @@ class DocumentViewSet(viewsets.ViewSet):
             "category": "hojaDeVida",
             "subcategory": null,
             "documentId": "doc123",
-            "reviewerId": "admin123",
             "reason": "El documento no es legible"
         }
         """
@@ -284,7 +281,7 @@ class DocumentViewSet(viewsets.ViewSet):
             subcategory = request.data.get('subcategory')
             document_id = request.data.get('documentId')
             
-            # Validar reviewerId y reason
+            # Validar reason
             serializer = DocumentRejectionSerializer(data=request.data)
             if not serializer.is_valid():
                 return Response({
@@ -292,7 +289,6 @@ class DocumentViewSet(viewsets.ViewSet):
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            reviewer_id = serializer.validated_data['reviewerId']
             reason = serializer.validated_data['reason']
             
             if not all([worker_id, category, document_id]):
@@ -306,7 +302,7 @@ class DocumentViewSet(viewsets.ViewSet):
                 category,
                 subcategory,
                 document_id,
-                reviewer_id,
+                request.user,
                 reason
             )
             
@@ -315,11 +311,11 @@ class DocumentViewSet(viewsets.ViewSet):
                 'message': 'Documento rechazado exitosamente'
             }, status=status.HTTP_200_OK)
             
-        except Exception as e:
-            logger.error(f"Error rejecting document: {str(e)}")
+        except Exception:
+            logger.exception("Error rejecting document")
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'No se pudo rechazar el documento. Intenta de nuevo más tarde.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'], url_path='worker/(?P<worker_id>[^/.]+)/check-requirements')

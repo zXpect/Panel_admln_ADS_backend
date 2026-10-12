@@ -7,6 +7,7 @@ from .payment_serializers import (
 )
 
 from .service_request_serializers import (
+    ServiceRequestCreateSerializer,
     QuoteSubmitSerializer,
     QuoteRejectSerializer,
     RatingSerializer,
@@ -22,6 +23,7 @@ __all__ = [
     'PaymentAdminListSerializer',
 
     # Service request serializers
+    'ServiceRequestCreateSerializer',
     'QuoteSubmitSerializer',
     'QuoteRejectSerializer',
     'RatingSerializer',

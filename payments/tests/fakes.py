@@ -12,6 +12,18 @@ class FakeReference:
         self.firebase = firebase
         self.path = path
 
+    @property
+    def key(self):
+        return self.path.rstrip('/').split('/')[-1]
+
+    def push(self):
+        # Claves crecientes como las de Firebase ('-N0001', '-N0002'...)
+        self.firebase.push_count += 1
+        return FakeReference(self.firebase, f"{self.path}/-N{self.firebase.push_count:04d}")
+
+    def set(self, value):
+        self.firebase.set_data(self.path, value)
+
     def transaction(self, update_fn):
         # Como el SDK admin: las excepciones de update_fn abortan sin escribir
         new_value = update_fn(copy.deepcopy(self.firebase.get_data(self.path)))
@@ -24,6 +36,7 @@ class FakeFirebase:
 
     def __init__(self, data=None):
         self.data = copy.deepcopy(data or {})
+        self.push_count = 0
 
     @staticmethod
     def _keys(path):

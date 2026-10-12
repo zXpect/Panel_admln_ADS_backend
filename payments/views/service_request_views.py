@@ -9,6 +9,7 @@ from ..serializers import (
     QuoteRejectSerializer,
     QuoteSubmitSerializer,
     RatingSerializer,
+    ServiceRequestCreateSerializer,
 )
 from ..services.notification_service import notification_service
 from ..services.service_request_service import ServiceRequestError, service_request_service
@@ -50,6 +51,42 @@ class AppServiceRequestView(APIView):
         except Exception as e:
             logger.error(f"Error on request {request_id}: {str(e)}")
             return error_response('No se pudo completar la operación', status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ServiceRequestCreateView(APIView):
+    """
+    POST /api/requests/   (cliente)
+    Body: {"worker_id": "...", "service_category": "plomeria", "address": "...",
+           "description": "...", "lat": 5.3086, "lng": -73.8150,
+           "task_items": [{"task": "destapar-desague-sanitario", "quantity": 1}]}
+    Crea la solicitud con el precio de referencia congelado y notifica al trabajador.
+    """
+    authentication_classes = APP_AUTHENTICATION
+    permission_classes = [IsAppUser]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'service_requests'
+
+    def post(self, request):
+        serializer = ServiceRequestCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        try:
+            created = service_request_service.create_request(request.user.uid, serializer.validated_data)
+        except ServiceRequestError as e:
+            return error_response(e.message, e.status_code)
+        except Exception:
+            logger.exception("Error creating service request")
+            return error_response('No se pudo crear la solicitud', status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'success': True,
+            'data': {
+                'request_id': created['request_id'],
+                'status': created['status'],
+                'quote_reference': created['quote_reference'],
+            }
+        }, status=status.HTTP_201_CREATED)
 
 
 class QuoteSubmitView(AppServiceRequestView):

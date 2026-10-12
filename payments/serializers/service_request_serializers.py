@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from pricing.serializers import EstimateSerializer
+
 
 class StrictIntegerField(serializers.IntegerField):
     """Entero estricto: rechaza 50000.5, "50000", true. El dinero nunca es float."""
@@ -8,6 +10,26 @@ class StrictIntegerField(serializers.IntegerField):
         if not isinstance(data, int) or isinstance(data, bool):
             raise serializers.ValidationError('Debe ser un número entero')
         return super().to_internal_value(data)
+
+
+class ServiceRequestCreateSerializer(EstimateSerializer):
+    """
+    Cuerpo de POST /api/requests/: los ítems y el oficio se validan como en el
+    estimado; el trabajador se valida contra Firebase en el servicio.
+    """
+    worker_id = serializers.CharField(max_length=255)
+    address = serializers.CharField(max_length=200)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default='')
+    lat = serializers.FloatField(min_value=-90, max_value=90)
+    lng = serializers.FloatField(min_value=-180, max_value=180)
+    # Medición del tiempo de búsqueda (Sprint 6); opcionales
+    search_started_at = StrictIntegerField(min_value=0, required=False)
+    worker_selected_at = StrictIntegerField(min_value=0, required=False)
+
+    def validate_worker_id(self, value):
+        if any(char in value for char in '/.#$[]'):
+            raise serializers.ValidationError('ID de trabajador inválido')
+        return value
 
 
 class QuoteSubmitSerializer(serializers.Serializer):

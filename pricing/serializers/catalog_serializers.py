@@ -26,7 +26,7 @@ class EstimateSerializer(serializers.Serializer):
     """
     Cuerpo de POST /api/requests/estimate/ (y base de POST /api/requests/).
     Al validar resuelve el oficio y las tareas contra el catálogo activo:
-    validated_data = {'category': ServiceCategory, 'items': [{'task': Task | None, ...}]}
+    validated_data incluye 'category' (ServiceCategory) e 'items' ([{'task': Task | None, ...}]).
     """
     MAX_ITEMS = 10
 
@@ -66,4 +66,4 @@ class EstimateSerializer(serializers.Serializer):
         if errors:
             raise serializers.ValidationError({'task_items': errors})
 
-        return {'category': category, 'items': items}
+        return {**attrs, 'category': category, 'items': items}

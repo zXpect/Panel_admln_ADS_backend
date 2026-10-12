@@ -7,12 +7,14 @@ from .views import (
     QuoteRejectView,
     QuoteSubmitView,
     RatingView,
+    ServiceRequestCreateView,
 )
 
 app_name = 'service_requests'
 
 # Montadas en /api/ (ver admin_panel/urls.py). Todas requieren el ID token de Firebase.
 urlpatterns = [
+    path('requests/', ServiceRequestCreateView.as_view(), name='request-create'),
     path('requests/quote-limits/', QuoteLimitsView.as_view(), name='quote-limits'),
     path('requests/<str:request_id>/quote/', QuoteSubmitView.as_view(), name='quote-submit'),
     path('requests/<str:request_id>/quote/accept/', QuoteAcceptView.as_view(), name='quote-accept'),
@@ -25,6 +27,7 @@ urlpatterns = [
 RUTAS DISPONIBLES (app móvil):
 
 SERVICE REQUESTS:
+- POST   /api/requests/                               - Crear solicitud (cliente; congela la referencia y notifica)
 - GET    /api/requests/quote-limits/?service_type=X   - Rango de precio permitido
 - POST   /api/requests/{id}/quote/                    - Enviar cotización (trabajador)
 - POST   /api/requests/{id}/quote/accept/             - Aceptar cotización (cliente)

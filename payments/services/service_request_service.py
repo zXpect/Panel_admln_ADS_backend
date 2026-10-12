@@ -2,6 +2,10 @@ import json
 import logging
 import time
 
+from pricing.models import ServiceCategory
+from pricing.services import pricing_service
+from pricing.services.pricing_service import json_number
+from pricing.services.worker_categories import worker_categories
 from worker_verification.models import SystemConfig
 from worker_verification.services.firebase_service import firebase_service
 
@@ -26,7 +30,7 @@ def _now_ms():
 class ServiceRequestService:
     """
     Operaciones sobre requests/<id> que la app no puede hacer directamente
-    (las reglas de Firebase las reservan al backend): cotización y calificación.
+    (las reglas de Firebase las reservan al backend): creación, cotización y calificación.
 
     Cada cambio se hace con una transacción de Firebase para que dos
     peticiones simultáneas no dejen la solicitud en un estado inconsistente.
@@ -34,6 +38,7 @@ class ServiceRequestService:
 
     REQUESTS_PATH = 'requests'
     WORKERS_PATH = 'User/Trabajadores'
+    CLIENTS_PATH = 'User/Clientes'
 
     QUOTE_QUOTED = 'quoted'
     QUOTE_ACCEPTED = 'accepted'
@@ -91,6 +96,75 @@ class ServiceRequestService:
                 logger.error(f"Invalid SystemConfig value for {self.CONFIG_PRICE_RANGES}")
 
         return {'min_price': min_price, 'max_price': max_price, 'currency': 'COP'}
+
+    # ---------- creación ----------
+
+    def create_request(self, client_uid, data):
+        """
+        Crea requests/<id> (B18, B14). Valida al trabajador (verificado y con el
+        oficio pedido), congela el precio de referencia, escribe en Firebase y
+        notifica al trabajador. `data` es el validated_data de
+        ServiceRequestCreateSerializer.
+        """
+        category = data['category']
+        worker_id = data['worker_id']
+        if worker_id == client_uid:
+            raise ServiceRequestError('No puedes solicitarte un servicio a ti mismo', 400)
+
+        client = self.firebase.get_data(f"{self.CLIENTS_PATH}/{client_uid}")
+        if not isinstance(client, dict):
+            raise ServiceRequestError('Solo un cliente registrado puede crear solicitudes', 403)
+
+        worker = self.firebase.get_data(f"{self.WORKERS_PATH}/{worker_id}")
+        if not isinstance(worker, dict):
+            raise ServiceRequestError('Trabajador no encontrado', 404)
+        if (worker.get('verificationStatus') or {}).get('status') != 'approved' or worker.get('isActive') is False:
+            raise ServiceRequestError('El trabajador no tiene la verificación aprobada', 409)
+        valid_slugs = set(ServiceCategory.objects.filter(is_active=True).values_list('slug', flat=True))
+        if category.slug not in worker_categories(worker, valid_slugs):
+            raise ServiceRequestError('El trabajador no ejerce el oficio pedido', 409)
+
+        quote_reference = pricing_service.estimate(data['items'])
+        task_items = [
+            {'task': item['task'].slug, 'quantity': json_number(item['quantity'])} if item['task']
+            else {'custom_description': item['custom_description'], 'quantity': json_number(item['quantity'])}
+            for item in data['items']
+        ]
+
+        now = _now_ms()
+        ref = self.firebase.get_database_reference(self.REQUESTS_PATH).push()
+        request_id = ref.key
+        request = {
+            'id': request_id,
+            'request_id': request_id,
+            'client_id': client_uid,
+            'client_name': client.get('name') or 'Cliente',
+            'client_phone': client.get('phone') or '',
+            'client_email': client.get('email') or '',
+            'worker_id': worker_id,
+            'worker_name': worker.get('name') or 'Trabajador',
+            'worker_phone': worker.get('phone') or '',
+            'service_category': category.slug,
+            'service_type': category.name,
+            'address': data['address'],
+            'description': data.get('description', ''),
+            'lat': data['lat'],
+            'lng': data['lng'],
+            'task_items': task_items,
+            'quote_reference': quote_reference,
+            'status': 'pending',
+            'is_rated': False,
+            'timestamp': now,
+            'last_updated': now,
+        }
+        for field in ('search_started_at', 'worker_selected_at'):
+            if field in data:
+                request[field] = data[field]
+
+        ref.set(request)
+        logger.info(f"Request {request_id} created by client {client_uid} for worker {worker_id}")
+        self.notifications.notify('new_request', request_id, request)
+        return request
 
     # ---------- transacciones ----------
 

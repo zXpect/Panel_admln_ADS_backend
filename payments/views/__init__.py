@@ -2,6 +2,7 @@ from .webhook_views import PaymentWebhookView
 from .mock_checkout_views import MockCheckoutView
 from .payment_views import PaymentListCreateView, PaymentDetailView
 from .service_request_views import (
+    ServiceRequestCreateView,
     QuoteSubmitView,
     QuoteAcceptView,
     QuoteRejectView,
@@ -15,6 +16,7 @@ __all__ = [
     'MockCheckoutView',
     'PaymentListCreateView',
     'PaymentDetailView',
+    'ServiceRequestCreateView',
     'QuoteSubmitView',
     'QuoteAcceptView',
     'QuoteRejectView',

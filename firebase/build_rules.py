@@ -34,6 +34,36 @@ PROTECTED_REQUEST_FIELDS = [
     'payment_updated_at',
 ]
 
+# Sprint 4 (solo reglas finales): la solicitud la crea el backend
+# (POST /api/requests/) y la cotización con motivo y agenda, la reprogramación y la
+# cancelación pasan por el backend. Estos campos tampoco los escribe la app.
+SPRINT4_PROTECTED_REQUEST_FIELDS = [
+    'service_category',
+    'task_items',
+    'lat',
+    'lng',
+    'quote_reference',
+    'quote_is_adjusted',
+    'quote_adjustment_reason_code',
+    'quote_adjustment_reason_text',
+    'scheduled_at',
+    'estimated_duration_min',
+    'rescheduled_at',
+    'reschedule_count',
+    'cancelled_by',
+    'cancellation_reason_code',
+    'cancellation_reason_text',
+    'cancelled_at',
+    'requote',
+    'search_started_at',
+    'worker_selected_at',
+]
+
+# En las reglas .val() solo devuelve valores primitivos: los campos que son objetos
+# no se pueden comparar con unchanged(). Se bloquean con '.validate': false en el
+# hijo (el SDK admin no pasa por las reglas) y se exige que no se borren.
+OBJECT_REQUEST_FIELDS = ['task_items', 'quote_reference', 'requote']
+
 # Calificación: en las reglas finales la registra el backend
 # (POST /api/requests/<id>/rating/), que también recalcula el promedio
 RATING_FIELDS = ['is_rated', 'client_rating', 'client_comment', 'rated_at']
@@ -66,6 +96,14 @@ def status_change(old, new):
 def build_requests(stage1):
     quote_gate = () if stage1 else (f"{d('quote_status')} == 'accepted'",)
 
+    if stage1:
+        protected_fields = PROTECTED_REQUEST_FIELDS
+        object_fields = []
+    else:
+        protected_fields = PROTECTED_REQUEST_FIELDS + [
+            field for field in SPRINT4_PROTECTED_REQUEST_FIELDS if field not in OBJECT_REQUEST_FIELDS]
+        object_fields = OBJECT_REQUEST_FIELDS
+
     create = AND(
         "!data.exists()",
         f"{n('client_id')} == auth.uid",
@@ -85,13 +123,24 @@ def build_requests(stage1):
     else:
         client_rating_rule = AND(*[unchanged(field) for field in RATING_FIELDS])
 
-    client_update = AND(
-        f"auth.uid == {d('client_id')}",
+    if stage1:
         # Cancela mientras no haya precio acordado: en 'pending', o en 'accepted'
         # con la cotización pendiente o rechazada
-        OR(unchanged('status'),
-           status_change('pending', 'cancelled'),
-           AND(status_change('accepted', 'cancelled'), f"{d('quote_status')} != 'accepted'")),
+        client_status_rule = OR(
+            unchanged('status'),
+            status_change('pending', 'cancelled'),
+            AND(status_change('accepted', 'cancelled'), f"{d('quote_status')} != 'accepted'"))
+        # Etapa 1: el trabajador acepta sin cotizar
+        worker_accepts = (status_change('pending', 'accepted'),)
+    else:
+        # Final: la cancelación es POST /api/requests/<id>/cancel/ y aceptar es
+        # cotizar (POST /api/requests/<id>/quote/); el cliente no cambia el estado
+        client_status_rule = unchanged('status')
+        worker_accepts = ()
+
+    client_update = AND(
+        f"auth.uid == {d('client_id')}",
+        client_status_rule,
         client_rating_rule,
     )
 
@@ -99,7 +148,7 @@ def build_requests(stage1):
         f"auth.uid == {d('worker_id')}",
         OR(
             unchanged('status'),
-            status_change('pending', 'accepted'),
+            *worker_accepts,
             status_change('pending', 'rejected'),
             AND(status_change('accepted', 'on_the_way'), *quote_gate),
             status_change('on_the_way', 'in_progress'),
@@ -111,9 +160,13 @@ def build_requests(stage1):
     update = AND(
         "data.exists()",
         unchanged('client_id'), unchanged('worker_id'),
-        *[unchanged(field) for field in PROTECTED_REQUEST_FIELDS],
+        *[unchanged(field) for field in protected_fields],
+        *[f"newData.child('{field}').exists() == data.child('{field}').exists()" for field in object_fields],
         OR(client_update, worker_update),
     )
+
+    # Final: la app ya no crea solicitudes (POST /api/requests/)
+    write = OR(create, update) if stage1 else update
 
     return {
         ".indexOn": ["client_id", "worker_id"],
@@ -123,7 +176,8 @@ def build_requests(stage1):
                      "query.equalTo == auth.uid"),
         "$requestId": {
             ".read": AND(AUTH, OR(f"{d('client_id')} == auth.uid", f"{d('worker_id')} == auth.uid")),
-            ".write": AND(AUTH, "newData.exists()", OR(create, update)),
+            ".write": AND(AUTH, "newData.exists()", write),
+            **{field: {".validate": "false"} for field in object_fields},
         },
     }
 

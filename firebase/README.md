@@ -127,6 +127,25 @@ Verificado: sin sesión, lectura y escritura de la base dan `401` y Storage `403
 flujo completo (solicitud → cotización → servicio → pago → calificación)
 probado en dos teléfonos.
 
+**Sprint 4 (generadas el 2026-10-12, SIN publicar):** `database.rules.json` ya
+incluye lo siguiente. Se publica solo cuando la app de la rama
+`feature/task-catalog` de `ADSv` esté instalada en los dos teléfonos: la app de
+`feature/payments` crea solicitudes y cancela escribiendo en Firebase, y dejaría
+de poder hacerlo.
+- La app ya no crea solicitudes: las crea `POST /api/requests/`.
+- El cliente no cambia `status` (cancelar es `POST /api/requests/<id>/cancel/`) y
+  el trabajador ya no pasa `pending → accepted` (aceptar es cotizar). El trabajador
+  conserva `pending → rejected`, `accepted → on_the_way` (con cotización aceptada),
+  `on_the_way → in_progress` e `in_progress → completed`.
+- Campos que solo escribe el backend: `service_category`, `task_items`, `lat`,
+  `lng`, `quote_reference`, `quote_is_adjusted`, `quote_adjustment_reason_*`,
+  `scheduled_at`, `estimated_duration_min`, `rescheduled_at`, `reschedule_count`,
+  `cancelled_by`, `cancellation_reason_*`, `cancelled_at`, `requote`,
+  `search_started_at`, `worker_selected_at`. Los que son objetos (`task_items`,
+  `quote_reference`, `requote`) se bloquean con `.validate: false` en el hijo,
+  porque `.val()` no compara objetos.
+- `database.rules.stage1.json` no cambia (es histórica).
+
 ## Plan de despliegue
 
 **Etapa 1 — ahora (antes de las fases 3 y 4 de pagos)**

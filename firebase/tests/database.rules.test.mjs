@@ -12,6 +12,8 @@ const STAGE1 = process.env.npm_lifecycle_event === 'test:stage1';
 const RULES_FILE = STAGE1 ? 'database.rules.stage1.json' : 'database.rules.json';
 const RULES = new URL(`../${RULES_FILE}`, import.meta.url);
 const gated = STAGE1 ? assertSucceeds : assertFails;
+// Sprint 4 (solo finales): crear, cancelar y aceptar sin cotizar pasan por el backend
+const stage1Only = STAGE1 ? assertSucceeds : assertFails;
 let env;
 
 const CLIENT = 'client1', WORKER = 'worker1', OTHER = 'intruder';
@@ -75,8 +77,8 @@ test('solo los participantes leen una solicitud', async () => {
 });
 
 // ---------- requests: creación ----------
-test('cliente crea solicitud propia en pending', async () => {
-  await assertSucceeds(set(ref(db(CLIENT), 'requests/new1'), baseRequest()));
+test('cliente crea solicitud propia en pending: etapa 1 sí; final solo el backend', async () => {
+  await stage1Only(set(ref(db(CLIENT), 'requests/new1'), baseRequest()));
 });
 test('no se crea a nombre de otro ni con campos de pago/cotización', async () => {
   await assertFails(set(ref(db(OTHER), 'requests/new2'), baseRequest()));
@@ -100,13 +102,41 @@ test('no se borran solicitudes', async () => {
   await assertFails(remove(ref(db(CLIENT), `requests/${REQ}`)));
 });
 
+// ---------- requests: campos del Sprint 4 ----------
+test('final: catálogo, agenda y cancelación solo los escribe el backend', { skip: STAGE1 }, async () => {
+  await admin((d) => update(ref(d, `requests/${REQ}`), {
+    service_category: 'plomeria', lat: 5.3, lng: -73.8,
+    task_items: [{ task: 'destapar-desague-sanitario', quantity: 1 }],
+    quote_reference: { min_cop: 25500, max_cop: 51000, has_unpriced_items: false },
+    status: 'accepted', quoted_price: 40000, quote_status: 'quoted', quote_is_adjusted: false,
+    scheduled_at: 1792155600000, estimated_duration_min: 90,
+  }));
+  const writes = [
+    { service_category: 'electricidad' }, { lat: 1 }, { lng: 1 },
+    { 'task_items/0/quantity': 50 }, { task_items: null }, { 'task_items/1': { task: 'x', quantity: 1 } },
+    { 'quote_reference/min_cop': 1 }, { quote_reference: null },
+    { quote_is_adjusted: true }, { quote_adjustment_reason_code: 'otro' }, { quote_adjustment_reason_text: 'x' },
+    { scheduled_at: 1 }, { estimated_duration_min: 1 }, { rescheduled_at: 1 }, { reschedule_count: 5 },
+    { cancelled_by: 'client' }, { cancellation_reason_code: 'precio' }, { cancellation_reason_text: 'x' },
+    { cancelled_at: 1 }, { requote: { price: 1 } }, { search_started_at: 1 }, { worker_selected_at: 1 },
+  ];
+  for (const uid of [CLIENT, WORKER]) {
+    for (const values of writes) {
+      await assertFails(update(ref(db(uid), `requests/${REQ}`), values));
+    }
+  }
+  // Las transiciones propias del trabajador siguen funcionando con esos campos presentes
+  await admin((d) => update(ref(d, `requests/${REQ}`), { quote_status: 'accepted' }));
+  await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'on_the_way', started_trip_at: 4, last_updated: 4 }));
+});
+
 // ---------- requests: transiciones ----------
-test('cliente cancela mientras no haya precio acordado', async () => {
-  await assertSucceeds(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled', cancelled_at: 2 }));
-  // Aceptada, cotización pendiente o rechazada: aún puede cancelar
+test('cancelación: etapa 1 el cliente sin precio acordado; final solo el backend', async () => {
+  await stage1Only(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled', cancelled_at: 2 }));
+  // Aceptada, cotización pendiente o rechazada
   for (const quote_status of ['quoted', 'rejected']) {
     await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted', quote_status }));
-    await assertSucceeds(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled' }));
+    await stage1Only(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'cancelled' }));
   }
   // Con precio acordado ya no
   await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted', quote_status: 'accepted' }));
@@ -120,8 +150,13 @@ test('cliente cancela mientras no haya precio acordado', async () => {
 test('cliente no avanza estados del trabajador', async () => {
   await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { status: 'accepted' }));
 });
-test('trabajador acepta y no inicia viaje sin cotización aceptada', async () => {
-  await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'accepted', last_updated: 3 }));
+test('trabajador rechaza la solicitud nueva', async () => {
+  await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'rejected', last_updated: 3 }));
+  await assertFails(update(ref(db(WORKER), `requests/${REQ}`), { status: 'pending' }));
+});
+test('trabajador acepta (final: al cotizar, en el backend) y no inicia viaje sin cotización aceptada', async () => {
+  await stage1Only(update(ref(db(WORKER), `requests/${REQ}`), { status: 'accepted', last_updated: 3 }));
+  await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted' }));
   await gated(update(ref(db(WORKER), `requests/${REQ}`), { status: 'on_the_way' }));
   await admin((d) => update(ref(d, `requests/${REQ}`), { status: 'accepted', quoted_price: 50000, quote_status: 'accepted' }));
   await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'on_the_way', started_trip_at: 4 }));

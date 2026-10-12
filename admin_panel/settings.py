@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     # Local apps
     'worker_verification',
     'payments',
+    'pricing',
 ]
 
 MIDDLEWARE = [

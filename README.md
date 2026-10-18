@@ -803,8 +803,10 @@ con `PAGOS_MODO=mock`.
 
 1. En Render: **New → Blueprint** y elegir este repositorio (rama `develop` o `main`).
 2. Llenar las variables marcadas `sync: false` (ver `.env.production.example`):
-   `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, las de
-   Firebase y las cuatro llaves Sandbox de Wompi.
+   las dos de Firebase y las cuatro llaves Sandbox de Wompi. El dominio de
+   Render entra solo en `ALLOWED_HOSTS` y `CSRF_TRUSTED_ORIGINS`
+   (`RENDER_EXTERNAL_HOSTNAME`); `CORS_ALLOWED_ORIGINS` se agrega cuando el
+   panel React tenga URL.
 3. En el servicio `ads-api` → **Environment → Secret Files**, subir
    `serviceAccountKey.json` (queda en `/etc/secrets/serviceAccountKey.json`).
 4. Desplegar. El build instala, ejecuta `collectstatic`, `migrate` y

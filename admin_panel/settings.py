@@ -13,7 +13,12 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-default-key')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1',
+                       cast=lambda v: [s.strip() for s in v.split(',') if s.strip()])
+# Render define el dominio del servicio (ads-api.onrender.com) en esta variable
+RENDER_EXTERNAL_HOSTNAME = config('RENDER_EXTERNAL_HOSTNAME', default='')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
 # Application definition
 INSTALLED_APPS = [
@@ -298,6 +303,9 @@ if DJANGO_ENV == 'production':
     CSRF_TRUSTED_ORIGINS = config(
         'CSRF_TRUSTED_ORIGINS', default='',
         cast=lambda v: [s.strip() for s in v.split(',') if s.strip()])
+    if RENDER_EXTERNAL_HOSTNAME:
+        # El admin de Django (formularios con CSRF) en el dominio de Render
+        CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
     # Estáticos comprimidos y con hash (requiere collectstatic en el build)
     STORAGES = {

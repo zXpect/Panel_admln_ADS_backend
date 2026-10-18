@@ -55,6 +55,9 @@ Las reglas publicadas hoy tienen en la raíz `".read": true, ".write": true`:
   trabajadores). El trabajador edita su perfil, pero **no** su `rating`,
   `totalRatings` ni `isActive`, y en `verificationStatus.status` solo puede poner
   `documents_submitted`; aprobar o rechazar lo hace solo el panel.
+- `notifications/<uid>`: historial que escribe el backend al enviar cada push.
+  Solo su dueño lo lee y solo puede poner `read: true` en una notificación
+  existente; no crea, edita ni borra notificaciones.
 - `WorkerDocuments/<uid>`: solo su dueño. Puede subir o resubir documentos en
   `pending`, pero no cambiar `status` a `approved`/`rejected` ni escribir
   `reviewedBy`/`reviewedAt`.

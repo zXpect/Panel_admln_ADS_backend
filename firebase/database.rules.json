@@ -37,6 +37,19 @@
         ".write": "(auth != null && auth.uid == $uid)"
       }
     },
+    "notifications": {
+      "$uid": {
+        ".read": "(auth != null && auth.uid == $uid)",
+        ".indexOn": [
+          "created_at"
+        ],
+        "$notificationId": {
+          "read": {
+            ".write": "((auth != null && auth.uid == $uid) && data.exists() && newData.val() == true)"
+          }
+        }
+      }
+    },
     "WorkerDocuments": {
       "$uid": {
         ".read": "(auth != null && auth.uid == $uid)",

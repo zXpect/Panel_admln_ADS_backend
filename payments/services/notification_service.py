@@ -19,11 +19,16 @@ class NotificationService:
     El formato es el que ya procesa MyFirebaseMessagingService en la app:
     mensaje solo de datos con title, body, requestId y type.
 
+    Cada notificación también se guarda en notifications/<uid>/<id> para la
+    pantalla de notificaciones de la app (mockups 40 y 53), aunque el usuario
+    no tenga token FCM. La app solo lee ese nodo y marca "read".
+
     Las notificaciones son de mejor esfuerzo: un fallo se registra en el log y
     no interrumpe la operación que la originó.
     """
 
     TOKENS_PATH = 'Tokens'
+    HISTORY_PATH = 'notifications'
 
     STATUS_TEXTS = {
         'on_the_way': ('¡El trabajador va en camino!', 'El trabajador se dirige a tu ubicación'),
@@ -116,7 +121,27 @@ class NotificationService:
         recipient, data = self.build_message(notification_type, request_id, request)
         if not recipient:
             return False
+        self.save_to_history(recipient, data)
         return self.send_to_user(recipient, data)
+
+    # ---------- historial ----------
+
+    def save_to_history(self, uid, data):
+        """Guarda notifications/<uid>/<id> = {title, body, type, request_id, read, created_at}."""
+        try:
+            entry = {
+                'title': data.get('title', ''),
+                'body': data.get('body', ''),
+                'type': data.get('type', ''),
+                'request_id': data.get('requestId', ''),
+                'read': False,
+                'created_at': int(time.time() * 1000),
+            }
+            self.firebase.get_database_reference(f"{self.HISTORY_PATH}/{uid}").push().set(entry)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving notification history for {uid}: {str(e)}")
+            return False
 
     # ---------- envío ----------
 

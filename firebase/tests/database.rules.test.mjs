@@ -220,6 +220,22 @@ test('tokens: cada quien escribe el suyo; en final solo el dueño los lee', asyn
   await assertSucceeds(get(ref(db(CLIENT), `Tokens/${CLIENT}`)));
   await gated(get(ref(db(WORKER), `Tokens/${CLIENT}`)));
 });
+test('notificaciones: el dueño las lee y solo marca read en las existentes', async () => {
+  const entry = { title: 'T', body: 'B', type: 'new_request', request_id: REQ, read: false, created_at: 1 };
+  await admin(async (d) => set(ref(d, `notifications/${CLIENT}/n1`), entry));
+  const mine = ref(db(CLIENT), `notifications/${CLIENT}`);
+
+  await assertSucceeds(get(query(mine, orderByChild('created_at'))));
+  await assertFails(get(ref(db(WORKER), `notifications/${CLIENT}`)));
+  await assertSucceeds(update(mine, { 'n1/read': true }));
+  await assertFails(update(mine, { 'n1/read': false }));
+  await assertFails(update(mine, { 'n1/title': 'otro' }));
+  await assertFails(update(mine, { 'n2/read': true }));
+  await assertFails(set(ref(db(CLIENT), `notifications/${CLIENT}/n3`), entry));
+  await assertFails(remove(ref(db(CLIENT), `notifications/${CLIENT}/n1`)));
+  await assertFails(update(ref(db(WORKER), `notifications/${CLIENT}`), { 'n1/read': true }));
+});
+
 test('trabajador no aprueba sus propios documentos', async () => {
   const hv = `WorkerDocuments/${WORKER}/hojaDeVida`;
   const titulo = `WorkerDocuments/${WORKER}/certificaciones/titulos/doc1`;

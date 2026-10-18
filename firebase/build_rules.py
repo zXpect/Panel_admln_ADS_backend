@@ -258,6 +258,19 @@ def build(stage1=False):
                     ".write": owner_only,
                 }
             },
+            # Historial de notificaciones: lo escribe el backend al enviar cada push;
+            # el dueño lo lee y solo puede marcar como leída una que ya existe
+            "notifications": {
+                "$uid": {
+                    ".read": owner_only,
+                    ".indexOn": ["created_at"],
+                    "$notificationId": {
+                        "read": {
+                            ".write": AND(owner_only, "data.exists()", "newData.val() == true"),
+                        },
+                    },
+                }
+            },
             # WorkerDocuments/<uid>/<categoría>  (hojaDeVida, antecedentesJudiciales)
             # WorkerDocuments/<uid>/certificaciones/<subcategoría>/<docId>
             "WorkerDocuments": {

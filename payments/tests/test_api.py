@@ -296,3 +296,23 @@ class NotificationApiTests(AppApiTestCase):
         response = self.notify(CLIENT, 'new_request')
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()['data']['sent'])
+        # El historial se guarda aunque no haya push
+        self.assertEqual(len(self.fb.get_data(f"notifications/{WORKER}")), 1)
+
+    def test_notification_is_saved_to_recipient_history(self):
+        self.notify(CLIENT, 'new_request')
+
+        history = self.fb.get_data(f"notifications/{WORKER}")
+        self.assertEqual(len(history), 1)
+        entry = next(iter(history.values()))
+        self.assertEqual(entry['title'], 'Nueva Solicitud de Servicio')
+        self.assertEqual(entry['type'], 'new_request')
+        self.assertEqual(entry['request_id'], REQ)
+        self.assertFalse(entry['read'])
+        self.assertIsInstance(entry['created_at'], int)
+        self.assertIsNone(self.fb.get_data(f"notifications/{CLIENT}"))
+
+    def test_history_failure_does_not_block_push(self):
+        with mock.patch.object(self.fb, 'get_database_reference', side_effect=Exception('down')):
+            response = self.notify(CLIENT, 'new_request')
+        self.assertTrue(response.json()['data']['sent'])

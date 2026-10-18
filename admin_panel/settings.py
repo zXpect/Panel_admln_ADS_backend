@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'payments',
     'pricing',
     'pqr',
+    'accounts',
 ]
 
 MIDDLEWARE = [
@@ -138,6 +139,7 @@ REST_FRAMEWORK = {
         'ratings': '10/min',
         'notifications': '60/min',
         'pqr': '20/min',
+        'account': '5/min',
     },
 }
 

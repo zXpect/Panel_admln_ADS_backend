@@ -37,6 +37,8 @@ class FakeFirebase:
     def __init__(self, data=None):
         self.data = copy.deepcopy(data or {})
         self.push_count = 0
+        # Nombres de archivos en Cloud Storage
+        self.files = []
 
     @staticmethod
     def _keys(path):
@@ -71,6 +73,18 @@ class FakeFirebase:
 
     def get_database_reference(self, path=''):
         return FakeReference(self, path)
+
+    def query_data(self, path, order_by=None, equal_to=None, **kwargs):
+        node = self.get_data(path) or {}
+        return {key: value for key, value in node.items()
+                if isinstance(value, dict) and value.get(order_by) == equal_to}
+
+    def list_files_in_folder(self, prefix):
+        return [name for name in self.files if name.startswith(prefix)]
+
+    def delete_file_from_storage(self, name):
+        self.files.remove(name)
+        return True
 
 
 def _b64(value):

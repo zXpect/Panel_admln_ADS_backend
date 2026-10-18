@@ -58,6 +58,11 @@ Las reglas publicadas hoy tienen en la raíz `".read": true, ".write": true`:
 - `notifications/<uid>`: historial que escribe el backend al enviar cada push.
   Solo su dueño lo lee y solo puede poner `read: true` en una notificación
   existente; no crea, edita ni borra notificaciones.
+- Final: `consent` (`termsVersion`, `privacyVersion`, `acceptedAt`) e `isAdult`
+  en `User/Clientes/<uid>` y `User/Trabajadores/<uid>` (D18, D19). Si vienen deben
+  tener la forma completa; una vez aceptado, el consentimiento no se borra ni
+  retrocede (se renueva con una fecha posterior) e `isAdult` no vuelve a `false`.
+  Todavía no se exigen al registrarse, para no romper la app actual.
 - `WorkerDocuments/<uid>`: solo su dueño. Puede subir o resubir documentos en
   `pending`, pero no cambiar `status` a `approved`/`rejected` ni escribir
   `reviewedBy`/`reviewedAt`.

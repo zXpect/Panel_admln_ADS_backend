@@ -6,7 +6,7 @@
       "Clientes": {
         "$uid": {
           ".read": "(auth != null && auth.uid == $uid)",
-          ".write": "((auth != null && auth.uid == $uid) && newData.exists())"
+          ".write": "((auth != null && auth.uid == $uid) && newData.exists() && ((!newData.child('consent').exists() || (newData.child('consent').child('termsVersion').isString() && newData.child('consent').child('privacyVersion').isString() && newData.child('consent').child('acceptedAt').isNumber())) && (!data.child('consent').exists() || (newData.child('consent').exists() && newData.child('consent').child('acceptedAt').val() >= data.child('consent').child('acceptedAt').val())) && (!newData.child('isAdult').exists() || newData.child('isAdult').isBoolean()) && (data.child('isAdult').val() != true || newData.child('isAdult').val() == true)))"
         }
       },
       "Trabajadores": {
@@ -18,7 +18,7 @@
           "email"
         ],
         "$uid": {
-          ".write": "(auth != null && auth.uid == $uid && newData.exists() && ((data.exists() && newData.child('rating').val() == data.child('rating').val() && newData.child('totalRatings').val() == data.child('totalRatings').val()) || (!data.exists() && (newData.child('rating').val() == null || newData.child('rating').val() == 0) && (newData.child('totalRatings').val() == null || newData.child('totalRatings').val() == 0))) && newData.child('isActive').val() == data.child('isActive').val() && (newData.child('verificationStatus').child('status').val() == data.child('verificationStatus').child('status').val() || newData.child('verificationStatus').child('status').val() == 'documents_submitted'))"
+          ".write": "(auth != null && auth.uid == $uid && newData.exists() && ((data.exists() && newData.child('rating').val() == data.child('rating').val() && newData.child('totalRatings').val() == data.child('totalRatings').val()) || (!data.exists() && (newData.child('rating').val() == null || newData.child('rating').val() == 0) && (newData.child('totalRatings').val() == null || newData.child('totalRatings').val() == 0))) && newData.child('isActive').val() == data.child('isActive').val() && (newData.child('verificationStatus').child('status').val() == data.child('verificationStatus').child('status').val() || newData.child('verificationStatus').child('status').val() == 'documents_submitted') && ((!newData.child('consent').exists() || (newData.child('consent').child('termsVersion').isString() && newData.child('consent').child('privacyVersion').isString() && newData.child('consent').child('acceptedAt').isNumber())) && (!data.child('consent').exists() || (newData.child('consent').exists() && newData.child('consent').child('acceptedAt').val() >= data.child('consent').child('acceptedAt').val())) && (!newData.child('isAdult').exists() || newData.child('isAdult').isBoolean()) && (data.child('isAdult').val() != true || newData.child('isAdult').val() == true)))"
         }
       }
     },

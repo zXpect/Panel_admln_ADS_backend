@@ -191,6 +191,28 @@ def build_requests(stage1):
     }
 
 
+def consent_rule():
+    """
+    Consentimiento (D18) e isAdult (D19), que escribe el dueño al registrarse
+    (B4-1, B4-2). Si viene, debe tener la forma completa; una vez aceptado no
+    se borra ni retrocede (se puede renovar con una fecha posterior), e isAdult
+    no deja de ser verdadero. No se exige todavía para no romper el registro
+    de la app actual.
+    """
+    consent = "newData.child('consent')"
+    return AND(
+        OR(f"!{consent}.exists()",
+           AND(f"{consent}.child('termsVersion').isString()",
+               f"{consent}.child('privacyVersion').isString()",
+               f"{consent}.child('acceptedAt').isNumber()")),
+        OR("!data.child('consent').exists()",
+           AND(f"{consent}.exists()",
+               f"{consent}.child('acceptedAt').val() >= data.child('consent').child('acceptedAt').val()")),
+        OR("!newData.child('isAdult').exists()", "newData.child('isAdult').isBoolean()"),
+        OR("data.child('isAdult').val() != true", "newData.child('isAdult').val() == true"),
+    )
+
+
 def build_workers(stage1):
     owner = AND(
         AUTH, "auth.uid == $uid", "newData.exists()",
@@ -204,6 +226,7 @@ def build_workers(stage1):
         OR("newData.child('verificationStatus').child('status').val() == "
            "data.child('verificationStatus').child('status').val()",
            "newData.child('verificationStatus').child('status').val() == 'documents_submitted'"),
+        *(() if stage1 else (consent_rule(),)),
     )
     worker = {".write": owner}
 
@@ -249,7 +272,7 @@ def build(stage1=False):
                 "Clientes": {
                     "$uid": {
                         ".read": owner_only,
-                        ".write": AND(owner_only, "newData.exists()"),
+                        ".write": AND(owner_only, "newData.exists()", *(() if stage1 else (consent_rule(),))),
                     }
                 },
                 "Trabajadores": build_workers(stage1),

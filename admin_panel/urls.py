@@ -43,6 +43,9 @@ urlpatterns = [
 
     # PQR App
     path('api/pqr/', include('pqr.urls')),
+
+    # Cuenta de la app (eliminar mi cuenta)
+    path('api/', include('accounts.urls')),
     path('api/', include('payments.request_urls')),
 
     # Worker Verification App

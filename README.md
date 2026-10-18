@@ -609,6 +609,13 @@ cerrar exige respuesta y una PQR cerrada ya no cambia). El plazo `due_at` es de
 (`pqr/services/business_days.py`). Al responder se avisa al autor con el tipo
 `pqr_answered`, que también queda en `notifications/<uid>`.
 
+**Eliminar mi cuenta** (app `accounts/`, D18). `DELETE /api/me/` → `204`.
+Borra el perfil, `Tokens`, `active_workers`, `WorkerDocuments`,
+`notifications` y los archivos del usuario en Storage, cancela sus solicitudes
+`pending`/`accepted` (avisa a la otra parte), anonimiza el contacto en las
+demás y, al final, elimina la cuenta de Firebase Auth. Con un servicio
+`on_the_way`/`in_progress` responde `409`. `Payment` y `PQR` conservan solo el uid.
+
 Errores: `{"success": false, "error": "..."}` (o `"errors"` de validación) con
 `400` datos inválidos, `401` sin token válido, `403` no es el participante
 correcto, `404` no existe, `409` el estado de la solicitud no lo permite.

@@ -225,6 +225,30 @@ test('datos de clientes solo para su dueño', async () => {
   await assertFails(get(ref(db(WORKER), `User/Clientes/${CLIENT}`)));
   await assertFails(get(ref(db(CLIENT), 'User/Clientes')));
 });
+
+test('«Mis datos»: el dueño edita nombre, apellido y teléfono', async () => {
+  await assertSucceeds(update(ref(db(CLIENT), `User/Clientes/${CLIENT}`), { name: 'Carla', lastName: 'Ruiz', phone: '3001234567' }));
+  await assertSucceeds(update(ref(db(WORKER), `User/Trabajadores/${WORKER}`), { name: 'Will', lastName: 'Paz', phone: '3007654321' }));
+  await assertFails(update(ref(db(WORKER), `User/Clientes/${CLIENT}`), { phone: '1' }));
+});
+
+test('final: consentimiento con forma completa, sin borrarse ni retroceder', { skip: STAGE1 }, async () => {
+  const consent = { termsVersion: '1.0', privacyVersion: '1.0', acceptedAt: 100 };
+  const client = ref(db(CLIENT), `User/Clientes/${CLIENT}`);
+  // Registro como lo hace hoy la app (sin consentimiento) sigue funcionando
+  await assertSucceeds(set(ref(db('nuevo'), 'User/Clientes/nuevo'), { name: 'N', email: 'n@x.co' }));
+  await assertFails(update(client, { consent: { termsVersion: '1.0' } }));
+  await assertFails(update(client, { isAdult: 'sí' }));
+  await assertSucceeds(update(client, { consent, isAdult: true }));
+  await assertFails(update(client, { consent: null }));
+  await assertFails(update(client, { 'consent/acceptedAt': 50 }));
+  await assertFails(update(client, { isAdult: false }));
+  await assertSucceeds(update(client, { consent: { ...consent, termsVersion: '1.1', acceptedAt: 200 } }));
+  // El trabajador tiene la misma regla
+  const worker = ref(db(WORKER), `User/Trabajadores/${WORKER}`);
+  await assertSucceeds(update(worker, { consent }));
+  await assertFails(update(worker, { consent: null }));
+});
 test('tokens: cada quien escribe el suyo; en final solo el dueño los lee', async () => {
   await assertSucceeds(set(ref(db(CLIENT), `Tokens/${CLIENT}/token`), 't'));
   await assertFails(set(ref(db(CLIENT), `Tokens/${WORKER}/token`), 't'));

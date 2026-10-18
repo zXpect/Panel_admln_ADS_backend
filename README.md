@@ -600,6 +600,15 @@ en Wompi, o el trabajador registra el efectivo → el cliente califica.
 | `POST` | `/api/payments/webhook/` | Pasarela | Eventos de Wompi/mock; se autentica por checksum |
 | `GET/POST` | `/api/payments/mock-checkout/{reference}/` | Navegador | Checkout simulado (solo `PAGOS_MODO=mock`) |
 
+**PQR** (app `pqr/`, B11). `POST /api/pqr/` (app; solo el cliente o el
+trabajador de la solicitud, el rol lo pone el servidor), `GET /api/pqr/` (app:
+las propias; panel: todas, `?status=`), `GET /api/pqr/{id}/` y
+`PATCH /api/pqr/{id}/` (panel: `{"status": "en_tramite|cerrada", "response": "..."}`;
+cerrar exige respuesta y una PQR cerrada ya no cambia). El plazo `due_at` es de
+15 días hábiles en hora de Colombia, sin fines de semana ni festivos
+(`pqr/services/business_days.py`). Al responder se avisa al autor con el tipo
+`pqr_answered`, que también queda en `notifications/<uid>`.
+
 Errores: `{"success": false, "error": "..."}` (o `"errors"` de validación) con
 `400` datos inválidos, `401` sin token válido, `403` no es el participante
 correcto, `404` no existe, `409` el estado de la solicitud no lo permite.

@@ -147,8 +147,23 @@ class NotificationService:
         recipient, data = self.build_message(notification_type, request_id, request)
         if not recipient:
             return False
-        self.save_to_history(recipient, data)
-        return self.send_to_user(recipient, data)
+        return self.deliver(recipient, data)
+
+    def notify_pqr_answered(self, pqr):
+        """Avisa al autor que su PQR recibió respuesta (B11). Al tocarla, la app abre la solicitud."""
+        type_name = dict(pqr.TYPES).get(pqr.type, 'PQR').lower()
+        return self.deliver(pqr.author_uid, {
+            'type': 'pqr_answered',
+            'title': 'Tu PQR tiene respuesta',
+            'body': f"Respondimos tu {type_name}. Ábrela para ver la respuesta",
+            'requestId': pqr.service_request_id,
+            'pqrId': str(pqr.id),
+        })
+
+    def deliver(self, uid, data):
+        """Guarda la notificación en el historial y envía el push."""
+        self.save_to_history(uid, data)
+        return self.send_to_user(uid, data)
 
     # ---------- historial ----------
 

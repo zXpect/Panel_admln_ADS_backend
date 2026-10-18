@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'worker_verification',
     'payments',
     'pricing',
+    'pqr',
 ]
 
 MIDDLEWARE = [
@@ -136,6 +137,7 @@ REST_FRAMEWORK = {
         'service_requests': '30/min',
         'ratings': '10/min',
         'notifications': '60/min',
+        'pqr': '20/min',
     },
 }
 

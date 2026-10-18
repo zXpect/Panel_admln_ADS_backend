@@ -125,6 +125,8 @@ class PaymentService:
             raise ServiceRequestError('La solicitud no tiene una cotización aceptada', 409)
         if request.get('payment_status') == 'approved':
             raise ServiceRequestError('Esta solicitud ya fue pagada', 409)
+        if request.get('payment_method') == self.requests.PAYMENT_CASH:
+            raise ServiceRequestError('El método de pago de esta solicitud es efectivo', 409)
 
         quoted_price = request.get('quoted_price')
         if not isinstance(quoted_price, int) or isinstance(quoted_price, bool) or quoted_price <= 0:
@@ -164,6 +166,53 @@ class PaymentService:
             # El pago existe y el checkout funciona; el webhook vuelve a sincronizar
             pass
         return payment, session, True
+
+    def register_cash_payment(self, worker_uid, service_request_id):
+        """
+        «Recibí el pago» del trabajador en un servicio en efectivo (D10). Crea un
+        Payment APPROVED con gateway 'cash', sin pasar por la pasarela, para que
+        el libro de pagos tenga todos los servicios pagados, y lo refleja en la
+        solicitud. El cliente recibe un aviso y, si no está de acuerdo, abre una PQR.
+
+        Returns:
+            tuple: (Payment, solicitud actualizada)
+        """
+        request = self.requests.get_request(service_request_id)
+        self.requests.check_cash_payment(request, worker_uid)
+        quoted_price = request.get('quoted_price')
+        if not isinstance(quoted_price, int) or isinstance(quoted_price, bool) or quoted_price <= 0:
+            raise ServiceRequestError('La cotización de la solicitud no es válida', 409)
+        if Payment.objects.filter(service_request_id=service_request_id, status=Payment.STATUS_APPROVED).exists():
+            raise ServiceRequestError('El pago de esta solicitud ya está registrado', 409)
+
+        with transaction.atomic():
+            payment = Payment.objects.create(
+                reference=self.generate_reference(),
+                service_request_id=service_request_id,
+                client_uid=request.get('client_id', ''),
+                worker_uid=worker_uid,
+                amount_in_cents=quoted_price * 100,
+                currency=settings.PAYMENTS['CURRENCY'],
+                status=Payment.STATUS_APPROVED,
+                gateway=Payment.GATEWAY_CASH,
+            )
+            now = int(payment.created_at.timestamp() * 1000)
+
+            def update(current):
+                # Se repiten las validaciones dentro de la transacción de Firebase
+                self.requests.check_cash_payment(current, worker_uid)
+                current['payment_status'] = 'approved'
+                current['payment_reference'] = payment.reference
+                current['payment_updated_at'] = now
+                current['cash_received_at'] = now
+                current['last_updated'] = now
+
+            # Si Firebase rechaza el cambio, el Payment se revierte con la transacción SQL
+            updated = self.requests._transact_request(service_request_id, update)
+
+        logger.info(f"Cash payment {payment.reference} registered for request {service_request_id}")
+        self.notifications.notify('cash_received', service_request_id, updated)
+        return payment, updated
 
     def _reusable_pending_payment(self, service_request_id, amount_in_cents):
         """

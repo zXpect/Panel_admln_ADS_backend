@@ -52,6 +52,11 @@ class ServiceRequestService:
     MAX_REJECTION_REASON = 200
     MAX_RATING_COMMENT = 500
 
+    # Método de pago (D10): lo elige el cliente al aceptar la cotización
+    PAYMENT_DIGITAL = 'digital'
+    PAYMENT_CASH = 'cash'
+    CLOSED_STATUSES = ('completed', 'cancelled', 'rejected')
+
     def __init__(self):
         self.firebase = firebase_service
         self.notifications = notification_service
@@ -232,12 +237,18 @@ class ServiceRequestService:
             return True
         return not min_cop <= quoted_price <= max_cop
 
-    def accept_quote(self, client_uid, request_id):
+    def accept_quote(self, client_uid, request_id, payment_method=None):
+        """
+        El cliente acepta la cotización y elige el método de pago (D10). La app
+        anterior no envía método: la solicitud queda sin él y se paga en digital.
+        """
         def update(request):
             self._check_client_can_answer_quote(request, client_uid)
             now = _now_ms()
             request['quote_status'] = self.QUOTE_ACCEPTED
             request['quote_accepted_at'] = now
+            if payment_method:
+                request['payment_method'] = payment_method
             request['last_updated'] = now
 
         request = self._transact_request(request_id, update)
@@ -264,6 +275,36 @@ class ServiceRequestService:
             raise ServiceRequestError('La solicitud no está esperando respuesta a una cotización', 409)
         if request.get('quote_status') != self.QUOTE_QUOTED:
             raise ServiceRequestError('No hay una cotización pendiente de respuesta', 409)
+
+    # ---------- método de pago ----------
+
+    def set_payment_method(self, client_uid, request_id, payment_method):
+        """El cliente cambia el método de pago hasta que el servicio termina (D10)."""
+        def update(request):
+            if request.get('client_id') != client_uid:
+                raise ServiceRequestError('Solo el cliente de la solicitud puede elegir el método de pago', 403)
+            if request.get('status') in self.CLOSED_STATUSES:
+                raise ServiceRequestError('El método de pago ya no se puede cambiar', 409)
+            if request.get('quote_status') != self.QUOTE_ACCEPTED:
+                raise ServiceRequestError('El método de pago se elige al aceptar la cotización', 409)
+
+            request['payment_method'] = payment_method
+            request['last_updated'] = _now_ms()
+
+        request = self._transact_request(request_id, update)
+        logger.info(f"Payment method of request {request_id} set to {payment_method}")
+        return request
+
+    def check_cash_payment(self, request, worker_uid):
+        """Condiciones de «Recibí el pago» (D10); las usa PaymentService.register_cash_payment."""
+        if request.get('worker_id') != worker_uid:
+            raise ServiceRequestError('Solo el trabajador asignado puede registrar el pago', 403)
+        if request.get('status') != 'completed':
+            raise ServiceRequestError('El servicio debe estar completado para registrar el pago', 409)
+        if request.get('payment_method') != self.PAYMENT_CASH:
+            raise ServiceRequestError('El método de pago de esta solicitud no es efectivo', 409)
+        if request.get('payment_status') == 'approved':
+            raise ServiceRequestError('El pago de esta solicitud ya está registrado', 409)
 
     # ---------- agenda ----------
 
@@ -333,7 +374,9 @@ class ServiceRequestService:
     def rate_service(self, client_uid, request_id, rating, comment=''):
         """
         Registra la calificación del cliente y recalcula el promedio del
-        trabajador en el servidor. Requiere el servicio completado y pagado.
+        trabajador en el servidor. Requiere el servicio completado y pagado:
+        aprobado en Wompi o registrado en efectivo por el trabajador (D11);
+        los dos dejan payment_status = 'approved'.
         """
         def update(request):
             if request.get('client_id') != client_uid:

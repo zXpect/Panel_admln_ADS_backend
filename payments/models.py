@@ -34,10 +34,13 @@ class Payment(models.Model):
 
     GATEWAY_MOCK = 'mock'
     GATEWAY_WOMPI = 'wompi'
+    # Pago en efectivo registrado por el trabajador (D10): nace APPROVED, sin pasarela
+    GATEWAY_CASH = 'cash'
 
     GATEWAYS = (
         (GATEWAY_MOCK, 'Simulada'),
         (GATEWAY_WOMPI, 'Wompi'),
+        (GATEWAY_CASH, 'Efectivo'),
     )
 
     reference = models.CharField(max_length=64, unique=True, verbose_name='Referencia')

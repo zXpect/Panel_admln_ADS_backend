@@ -7,6 +7,8 @@ from ..permissions import IsAppUser
 from ..serializers import (
     CancelSerializer,
     NotificationSerializer,
+    PaymentMethodSerializer,
+    QuoteAcceptSerializer,
     QuoteRejectSerializer,
     QuoteSubmitSerializer,
     RatingSerializer,
@@ -14,6 +16,7 @@ from ..serializers import (
     ServiceRequestCreateSerializer,
 )
 from ..services.notification_service import notification_service
+from ..services.payment_service import payment_service
 from ..services.service_request_service import ServiceRequestError, service_request_service
 from .common import (
     APP_AUTHENTICATION,
@@ -33,6 +36,14 @@ def _quote_data(request_id, request):
         'status': request.get('status'),
         'quoted_price': request.get('quoted_price'),
         'quote_status': request.get('quote_status'),
+    }
+
+
+def _payment_data(request_id, request):
+    return {
+        'request_id': request_id,
+        'payment_method': request.get('payment_method'),
+        'payment_status': request.get('payment_status'),
     }
 
 
@@ -170,12 +181,61 @@ class CancelView(AppServiceRequestView):
 
 
 class QuoteAcceptView(AppServiceRequestView):
-    """POST /api/requests/<request_id>/quote/accept/   (cliente)"""
+    """
+    POST /api/requests/<request_id>/quote/accept/   (cliente)
+    Body: {"payment_method": "digital" | "cash"}  (la app anterior no lo envía)
+    """
+
+    def post(self, request, request_id):
+        serializer = QuoteAcceptSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        def action():
+            updated = service_request_service.accept_quote(
+                request.user.uid, request_id, serializer.validated_data['payment_method'] or None)
+            data = _quote_data(request_id, updated)
+            data['payment_method'] = updated.get('payment_method')
+            return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+
+        return self.run(request_id, action)
+
+
+class PaymentMethodView(AppServiceRequestView):
+    """
+    POST /api/requests/<request_id>/payment-method/   (cliente)
+    Body: {"payment_method": "digital" | "cash"}
+    Cambia el método mientras el servicio no haya terminado (D10).
+    """
+
+    def post(self, request, request_id):
+        serializer = PaymentMethodSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        def action():
+            updated = service_request_service.set_payment_method(
+                request.user.uid, request_id, serializer.validated_data['payment_method'])
+            return Response({'success': True, 'data': _payment_data(request_id, updated)}, status=status.HTTP_200_OK)
+
+        return self.run(request_id, action)
+
+
+class CashReceivedView(AppServiceRequestView):
+    """
+    POST /api/requests/<request_id>/cash-received/   (trabajador)
+    «Recibí el pago» en un servicio en efectivo completado: crea el Payment
+    (gateway cash, APPROVED) y avisa al cliente.
+    """
+    throttle_scope = 'payments'
 
     def post(self, request, request_id):
         def action():
-            updated = service_request_service.accept_quote(request.user.uid, request_id)
-            return Response({'success': True, 'data': _quote_data(request_id, updated)}, status=status.HTTP_200_OK)
+            payment, updated = payment_service.register_cash_payment(request.user.uid, request_id)
+            data = _payment_data(request_id, updated)
+            data['cash_received_at'] = updated.get('cash_received_at')
+            data['payment_reference'] = payment.reference
+            return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
 
         return self.run(request_id, action)
 
@@ -203,8 +263,8 @@ class RatingView(AppServiceRequestView):
     """
     POST /api/requests/<request_id>/rating/   (cliente)
     Body: {"rating": 5, "comment": "..."}
-    Requiere el servicio completado y pagado. El promedio del trabajador se
-    recalcula en el servidor.
+    Requiere el servicio completado y pagado (Wompi aprobado o efectivo
+    registrado). El promedio del trabajador se recalcula en el servidor.
     """
     throttle_scope = 'ratings'
 

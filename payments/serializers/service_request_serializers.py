@@ -102,6 +102,18 @@ class QuoteRejectSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
 
 
+PAYMENT_METHODS = ('digital', 'cash')
+
+
+class QuoteAcceptSerializer(serializers.Serializer):
+    """El método de pago es opcional para no romper la app anterior (D10)."""
+    payment_method = serializers.ChoiceField(choices=PAYMENT_METHODS, required=False, allow_blank=True, default='')
+
+
+class PaymentMethodSerializer(serializers.Serializer):
+    payment_method = serializers.ChoiceField(choices=PAYMENT_METHODS)
+
+
 class RatingSerializer(serializers.Serializer):
     rating = StrictIntegerField(min_value=1, max_value=5)
     comment = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')

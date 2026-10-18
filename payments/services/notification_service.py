@@ -111,6 +111,14 @@ class NotificationService:
             data.update(title='Solicitud cancelada', body=f"{client_name} canceló la solicitud")
             return worker_id, data
 
+        if notification_type == 'cash_received':
+            data.update(
+                title='Pago en efectivo registrado',
+                body=f"{worker_name} registró que recibió {format_cop(request.get('quoted_price', 0))} en efectivo. "
+                     'Si no estás de acuerdo, abre una PQR',
+            )
+            return client_id, data
+
         if notification_type == 'payment_approved':
             data.update(title='Pago recibido', body='El cliente pagó el servicio')
             return worker_id, data

@@ -59,6 +59,12 @@ SPRINT4_PROTECTED_REQUEST_FIELDS = [
     'worker_selected_at',
 ]
 
+# Sprint 5 (solo reglas finales): método de pago y efectivo (D10) los escribe el backend
+SPRINT5_PROTECTED_REQUEST_FIELDS = [
+    'payment_method',
+    'cash_received_at',
+]
+
 # En las reglas .val() solo devuelve valores primitivos: los campos que son objetos
 # no se pueden comparar con unchanged(). Se bloquean con '.validate': false en el
 # hijo (el SDK admin no pasa por las reglas) y se exige que no se borren.
@@ -101,7 +107,8 @@ def build_requests(stage1):
         object_fields = []
     else:
         protected_fields = PROTECTED_REQUEST_FIELDS + [
-            field for field in SPRINT4_PROTECTED_REQUEST_FIELDS if field not in OBJECT_REQUEST_FIELDS]
+            field for field in SPRINT4_PROTECTED_REQUEST_FIELDS if field not in OBJECT_REQUEST_FIELDS
+        ] + SPRINT5_PROTECTED_REQUEST_FIELDS
         object_fields = OBJECT_REQUEST_FIELDS
 
     create = AND(

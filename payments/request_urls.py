@@ -2,7 +2,9 @@ from django.urls import path
 
 from .views import (
     CancelView,
+    CashReceivedView,
     NotificationView,
+    PaymentMethodView,
     QuoteAcceptView,
     QuoteLimitsView,
     QuoteRejectView,
@@ -23,6 +25,8 @@ urlpatterns = [
     path('requests/<str:request_id>/quote/reject/', QuoteRejectView.as_view(), name='quote-reject'),
     path('requests/<str:request_id>/schedule/', ScheduleView.as_view(), name='schedule'),
     path('requests/<str:request_id>/cancel/', CancelView.as_view(), name='cancel'),
+    path('requests/<str:request_id>/payment-method/', PaymentMethodView.as_view(), name='payment-method'),
+    path('requests/<str:request_id>/cash-received/', CashReceivedView.as_view(), name='cash-received'),
     path('requests/<str:request_id>/rating/', RatingView.as_view(), name='rating'),
     path('notifications/', NotificationView.as_view(), name='notifications'),
 ]
@@ -34,11 +38,13 @@ SERVICE REQUESTS:
 - POST   /api/requests/                               - Crear solicitud (cliente; congela la referencia y notifica)
 - GET    /api/requests/quote-limits/                  - Tarifa mínima y tope (app anterior)
 - POST   /api/requests/{id}/quote/                    - Cotizar con motivo y agenda (trabajador)
-- POST   /api/requests/{id}/quote/accept/             - Aceptar cotización (cliente)
+- POST   /api/requests/{id}/quote/accept/             - Aceptar cotización y elegir método de pago (cliente)
 - POST   /api/requests/{id}/quote/reject/             - Rechazar cotización (cliente)
 - POST   /api/requests/{id}/schedule/                 - Reprogramar (trabajador; avisa al cliente)
 - POST   /api/requests/{id}/cancel/                   - Cancelar con motivo (cliente o trabajador)
-- POST   /api/requests/{id}/rating/                   - Calificar servicio pagado (cliente)
+- POST   /api/requests/{id}/payment-method/           - Cambiar método de pago antes de terminar (cliente)
+- POST   /api/requests/{id}/cash-received/            - «Recibí el pago» en efectivo (trabajador; avisa al cliente)
+- POST   /api/requests/{id}/rating/                   - Calificar servicio pagado o en efectivo registrado (cliente)
 
 NOTIFICATIONS:
 - POST   /api/notifications/                          - Notificar al otro participante (FCM desde el backend)

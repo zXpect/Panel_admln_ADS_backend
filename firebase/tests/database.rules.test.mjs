@@ -119,6 +119,7 @@ test('final: catálogo, agenda y cancelación solo los escribe el backend', { sk
     { scheduled_at: 1 }, { estimated_duration_min: 1 }, { rescheduled_at: 1 }, { reschedule_count: 5 },
     { cancelled_by: 'client' }, { cancellation_reason_code: 'precio' }, { cancellation_reason_text: 'x' },
     { cancelled_at: 1 }, { requote: { price: 1 } }, { search_started_at: 1 }, { worker_selected_at: 1 },
+    { payment_method: 'cash' }, { cash_received_at: 1 },
   ];
   for (const uid of [CLIENT, WORKER]) {
     for (const values of writes) {

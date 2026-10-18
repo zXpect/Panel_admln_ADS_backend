@@ -16,6 +16,7 @@ Panel de administración para gestión y verificación de trabajadores, document
 - [Servicios](#servicios)
 - [Seguridad](#seguridad)
 - [Logging](#logging)
+- [Despliegue en Render](#despliegue-en-render)
 - [Contribuir](#contribuir)
 
 ## Características
@@ -610,6 +611,14 @@ solo escribe el backend (ver `firebase/README.md`).
 
 Pruebas manuales del mock: `python manage.py mock_payment <request_id> <monto_cop>`.
 
+**Wompi (`PAGOS_MODO=wompi`).** `WompiGateway` arma la URL del Web Checkout
+(`https://checkout.wompi.co/p/`) con la firma de integridad, y verifica los
+eventos con `WOMPI_EVENTS_SECRET`, igual que el mock. Antes de cerrar un pago
+pendiente vencido consulta la transacción en Wompi con la llave privada
+(`GET /transactions?reference=`): si ya está aprobada la aplica (evento
+`local.reconciled`) y no deja abrir otro pago; si sigue en proceso, la reutiliza.
+En el panel de Wompi, la URL de eventos debe ser `https://<host>/api/payments/webhook/`.
+
 ## Estructura del Proyecto
 
 ```
@@ -756,6 +765,31 @@ El sistema registra eventos en:
 INFO 2025-01-20 10:30:45 worker_service Retrieved 100 workers
 ERROR 2025-01-20 10:31:12 document_service Error approving document: File not found
 ```
+
+## Despliegue en Render
+
+Decisión D23: Render con PostgreSQL. `render.yaml` es un Blueprint con la API
+(gunicorn) y la base `ads-db`; la variable `DATABASE_URL` hace que Django use
+PostgreSQL (sin ella usa SQLite local). Con `DJANGO_ENV=production` se activan
+HTTPS obligatorio, cookies seguras, HSTS, estáticos con WhiteNoise y caché en
+la base para el throttling; el backend no arranca sin `SECRET_KEY` propia ni
+con `PAGOS_MODO=mock`.
+
+1. En Render: **New → Blueprint** y elegir este repositorio (rama `develop` o `main`).
+2. Llenar las variables marcadas `sync: false` (ver `.env.production.example`):
+   `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, las de
+   Firebase y las cuatro llaves Sandbox de Wompi.
+3. En el servicio `ads-api` → **Environment → Secret Files**, subir
+   `serviceAccountKey.json` (queda en `/etc/secrets/serviceAccountKey.json`).
+4. Desplegar. El build instala, ejecuta `collectstatic`, `migrate` y
+   `createcachetable`. Comprobar `https://<host>/api/health/` → `{"status": "ok"}`.
+5. Crear el usuario del panel: **Shell** del servicio → `python manage.py createsuperuser`.
+6. En el panel de Wompi Sandbox, URL de eventos: `https://<host>/api/payments/webhook/`.
+7. Pasar la URL pública a la app (`ADS_API_BASE_URL_RELEASE`) y al panel.
+
+La base gratuita vence a los 30 días: antes, cambiarla al plan pago más
+pequeño (D23). El plan gratuito del servicio se duerme sin tráfico; la primera
+petición después tarda unos segundos.
 
 ## Testing
 

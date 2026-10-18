@@ -138,6 +138,9 @@ class PaymentService:
             raise ServiceRequestError('Esta solicitud ya fue pagada', 409)
 
         pending = self._reusable_pending_payment(service_request_id, amount_in_cents)
+        if pending is not None and pending.status == Payment.STATUS_APPROVED:
+            # La pasarela lo aprobó y el evento no había llegado
+            raise ServiceRequestError('Esta solicitud ya fue pagada', 409)
         if pending:
             session = get_gateway().create_transaction(
                 pending.reference, pending.amount_in_cents, pending.currency, redirect_url)
@@ -218,6 +221,10 @@ class PaymentService:
         """
         Devuelve el pago PENDING vigente de la solicitud, o None. Uno vencido
         (más de PENDING_EXPIRATION) o con otro monto se cierra como ERROR.
+
+        Antes de cerrarlo se consulta la pasarela: si la transacción ya terminó
+        se aplica ese estado (y si quedó APPROVED se devuelve el pago aprobado);
+        si sigue en proceso en la pasarela y el monto no cambió, se reutiliza.
         """
         pending = Payment.objects.filter(
             service_request_id=service_request_id, status=Payment.STATUS_PENDING).first()
@@ -228,8 +235,13 @@ class PaymentService:
         if not expired and pending.amount_in_cents == amount_in_cents:
             return pending
 
-        # TODO(Fase 7): con Wompi, consultar el estado real de la transacción antes
-        # de expirarla, por si fue aprobada y el evento aún no llega.
+        found = get_gateway().find_transaction(pending.reference)
+        if found is not None:
+            if found.status in self.FINAL_GATEWAY_STATUSES and found.amount_in_cents == pending.amount_in_cents:
+                return self._reconcile(pending, found)
+            if found.status == Payment.STATUS_PENDING and pending.amount_in_cents == amount_in_cents:
+                return pending
+
         reason = 'expired' if expired else 'amount_changed'
         logger.info(f"Closing pending payment {pending.reference}: {reason}")
         pending.status = Payment.STATUS_ERROR
@@ -241,6 +253,42 @@ class PaymentService:
             checksum='',
             checksum_valid=True,
         )
+        return None
+
+    def _reconcile(self, payment, found):
+        """
+        Aplica a un pago PENDING el estado final consultado en la pasarela
+        (el evento se perdió o aún no llega).
+
+        Returns:
+            Payment si quedó APPROVED; None si quedó cerrado sin cobro
+        """
+        with transaction.atomic():
+            payment = Payment.objects.select_for_update().get(pk=payment.pk)
+            if payment.status != Payment.STATUS_PENDING or not payment.can_transition_to(found.status):
+                return None
+            logger.info(f"Payment {payment.reference} reconciled with gateway: {found.status}")
+            payment.status = found.status
+            payment.gateway_transaction_id = found.transaction_id
+            payment.save(update_fields=['status', 'gateway_transaction_id', 'updated_at'])
+            PaymentEvent.objects.create(
+                payment=payment,
+                event_type='local.reconciled',
+                payload={'status': found.status, 'transaction_id': found.transaction_id,
+                         'amount_in_cents': found.amount_in_cents},
+                checksum='',
+                checksum_valid=True,
+            )
+
+        try:
+            self.sync_to_firebase(payment)
+        except FirebaseSyncError:
+            pass
+        if payment.status == Payment.STATUS_APPROVED:
+            self.notifications.notify('payment_approved', payment.service_request_id, {
+                'worker_id': payment.worker_uid,
+            })
+            return payment
         return None
 
     def process_event(self, payload, header_checksum=None):

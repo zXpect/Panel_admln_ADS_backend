@@ -15,6 +15,14 @@ class CheckoutSession:
 
 
 @dataclass(frozen=True)
+class GatewayTransaction:
+    """Estado de una transacción consultado directamente en la pasarela."""
+    transaction_id: str
+    status: str
+    amount_in_cents: int
+
+
+@dataclass(frozen=True)
 class GatewayEvent:
     """Evento de la pasarela ya normalizado."""
     event_type: str
@@ -46,6 +54,15 @@ class BaseGateway(ABC):
         Returns:
             CheckoutSession
         """
+
+    def find_transaction(self, reference):
+        """
+        Consulta en la pasarela la transacción de una referencia.
+
+        Returns:
+            GatewayTransaction o None (la pasarela simulada no guarda transacciones)
+        """
+        return None
 
     def verify_event(self, payload, header_checksum=None):
         return verify_event_checksum(payload, self.events_secret, header_checksum)

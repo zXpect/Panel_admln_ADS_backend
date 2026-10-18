@@ -11,6 +11,9 @@ db.sqlite3
 # Logs
 logs/
 
+# Estáticos generados por collectstatic
+staticfiles/
+
 # Cachés de Python
 __pycache__/
 */__pycache__/

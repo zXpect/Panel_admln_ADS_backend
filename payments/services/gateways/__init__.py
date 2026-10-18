@@ -2,7 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from ...guards import check_payment_mode
-from .base import BaseGateway, CheckoutSession, GatewayEvent
+from .base import BaseGateway, CheckoutSession, GatewayEvent, GatewayTransaction
 
 
 def get_gateway():
@@ -22,8 +22,18 @@ def get_gateway():
             checkout_base_url=config['MOCK']['CHECKOUT_BASE_URL'],
         )
 
-    # PAGOS_MODO=wompi: WompiGateway se implementa en la Fase 7 (requiere llaves Sandbox)
-    raise ImproperlyConfigured('WompiGateway aún no está implementado')
+    from .wompi import WompiGateway
+    wompi = config['WOMPI']
+    try:
+        return WompiGateway(
+            public_key=wompi['PUBLIC_KEY'],
+            private_key=wompi['PRIVATE_KEY'],
+            integrity_secret=wompi['INTEGRITY_SECRET'],
+            events_secret=wompi['EVENTS_SECRET'],
+            base_url=wompi['BASE_URL'],
+        )
+    except ValueError as e:
+        raise ImproperlyConfigured(f"PAGOS_MODO=wompi: {e}") from e
 
 
-__all__ = ['BaseGateway', 'CheckoutSession', 'GatewayEvent', 'get_gateway']
+__all__ = ['BaseGateway', 'CheckoutSession', 'GatewayEvent', 'GatewayTransaction', 'get_gateway']

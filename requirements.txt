@@ -4,6 +4,10 @@ djangorestframework==3.14.0
 
 # Production Server
 gunicorn==21.2.0
+# Despliegue en Render (D23): PostgreSQL por DATABASE_URL y estáticos del admin
+dj-database-url==2.2.0
+psycopg2-binary==2.9.9
+whitenoise==6.7.0
 
 # Firebase
 firebase-admin==6.4.0

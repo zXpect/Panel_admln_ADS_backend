@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+
+import dj_database_url
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -35,6 +37,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Sirve los estáticos del admin de Django en Render (sin nginx)
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware', 
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -65,11 +69,12 @@ TEMPLATES = [
 WSGI_APPLICATION = 'admin_panel.wsgi.application'
 
 # Database
+# PostgreSQL en Render con DATABASE_URL (D23); sin ella, SQLite local
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+    )
 }
 
 # Password validation
@@ -268,17 +273,41 @@ DJANGO_ENV = config('DJANGO_ENV', default='development')
 if DJANGO_ENV == 'production':
     DEBUG = False
 
+    from django.core.exceptions import ImproperlyConfigured
+    if SECRET_KEY == 'django-insecure-default-key':
+        raise ImproperlyConfigured('Define SECRET_KEY en producción')
+
     # Seguridad adicional para producción
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
 
-    # PARA HTTPS
-    # SECURE_SSL_REDIRECT = True
-    # SESSION_COOKIE_SECURE = True
-    # CSRF_COOKIE_SECURE = True
-    # SECURE_HSTS_SECONDS = 31536000
-    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    # HTTPS: Render termina TLS en su proxy y avisa con X-Forwarded-Proto
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    # El chequeo de salud de Render llega por HTTP interno
+    SECURE_REDIRECT_EXEMPT = [r'^api/health/$']
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    CSRF_TRUSTED_ORIGINS = config(
+        'CSRF_TRUSTED_ORIGINS', default='',
+        cast=lambda v: [s.strip() for s in v.split(',') if s.strip()])
+
+    # Estáticos comprimidos y con hash (requiere collectstatic en el build)
+    STORAGES = {
+        'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+        'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+    }
+
+    # Throttling compartido entre los workers de gunicorn (requiere createcachetable)
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+            'LOCATION': 'django_cache',
+        }
+    }
 
     # Logging más restrictivo en producción
     LOGGING['loggers']['django']['level'] = 'WARNING'

@@ -37,11 +37,11 @@ Panel de administración para gestión y verificación de trabajadores, document
 - **Almacenamiento**: Firebase Storage
 - **Autenticación**: JWT (Simple JWT)
 - **Base de Datos Local**: SQLite (para usuarios de Django)
-- **Lenguaje**: Python 3.x
+- **Lenguaje**: Python 3.11
 
 ## Requisitos Previos
 
-- Python 3.8 o superior
+- Python 3.11 (con 3.13 o 3.14 falla la instalación: `Pillow==10.2.0` y `pandas==2.2.0` no tienen paquetes para esas versiones)
 - pip (gestor de paquetes de Python)
 - Cuenta de Firebase con proyecto configurado
 - Credenciales de Firebase (archivo JSON)
@@ -51,14 +51,15 @@ Panel de administración para gestión y verificación de trabajadores, document
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repositorio>
-cd admin_panel
+git clone -b develop https://github.com/zXpect/Panel_admln_ADS_backend.git
+cd Panel_admln_ADS_backend
 ```
 
 ### 2. Crear entorno virtual
 
 ```bash
 python -m venv venv
+# En Windows con varias versiones instaladas: py -3.11 -m venv venv
 
 # En Windows
 venv\Scripts\activate

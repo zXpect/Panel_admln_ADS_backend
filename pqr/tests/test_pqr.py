@@ -59,7 +59,8 @@ class PqrApiTests(AppApiTestCase):
         data = response.json()['data']
         self.assertEqual((data['author_role'], data['status'], data['response']), ('client', 'abierta', None))
         pqr = PQR.objects.get()
-        self.assertEqual(pqr.due_at, add_business_days(pqr.created_at, 15))
+        # due_at se calcula un instante antes de que se guarde created_at
+        self.assertLess(abs((pqr.due_at - add_business_days(pqr.created_at, 15)).total_seconds()), 1)
 
         self.assertEqual(self.create(uid=WORKER, type='peticion').json()['data']['author_role'], 'worker')
 

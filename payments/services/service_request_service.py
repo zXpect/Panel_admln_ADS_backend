@@ -276,6 +276,79 @@ class ServiceRequestService:
         if request.get('quote_status') != self.QUOTE_QUOTED:
             raise ServiceRequestError('No hay una cotización pendiente de respuesta', 409)
 
+    # ---------- re-cotización ----------
+
+    REQUOTE_STATUSES = ('on_the_way', 'in_progress')
+
+    def submit_requote(self, worker_uid, request_id, requote):
+        """
+        Una sola re-cotización por servicio, en on_the_way o in_progress, con
+        motivo (D7). El precio vigente no cambia hasta que el cliente la acepta.
+        `requote` es el validated_data de RequoteSerializer.
+        """
+        price = requote['price']
+
+        def update(request):
+            if request.get('worker_id') != worker_uid:
+                raise ServiceRequestError('Solo el trabajador asignado puede re-cotizar', 403)
+            if request.get('status') not in self.REQUOTE_STATUSES:
+                raise ServiceRequestError('Solo se puede re-cotizar con el servicio en camino o en progreso', 409)
+            if request.get('requote'):
+                raise ServiceRequestError('Este servicio ya tuvo una re-cotización', 409)
+
+            limits = self.get_quote_limits()
+            if price < limits['min_price']:
+                raise ServiceRequestError(
+                    f"El precio debe ser de al menos {limits['min_price']} COP (tarifa mínima por visita)", 400)
+            if price > limits['max_price']:
+                raise ServiceRequestError('El precio supera el máximo permitido', 400)
+            if price == request.get('quoted_price'):
+                raise ServiceRequestError('El nuevo precio es igual al cotizado', 400)
+
+            now = _now_ms()
+            request['requote'] = {
+                'price': price,
+                'reason_code': requote['reason_code'],
+                'reason_text': requote['reason_text'] if requote['reason_code'] == OTHER_REASON else '',
+                'status': 'pending',
+                'requested_at': now,
+            }
+            request['last_updated'] = now
+
+        request = self._transact_request(request_id, update)
+        logger.info(f"Requote submitted for request {request_id}: {price} COP")
+        self.notifications.notify('requote_received', request_id, request)
+        return request
+
+    def answer_requote(self, client_uid, request_id, accept):
+        """
+        El cliente acepta (el precio vigente pasa a ser el nuevo) o rechaza (el
+        trabajo se completa con el precio original).
+        """
+        def update(request):
+            if request.get('client_id') != client_uid:
+                raise ServiceRequestError('Solo el cliente de la solicitud puede responder la re-cotización', 403)
+            requote = request.get('requote')
+            if not isinstance(requote, dict) or requote.get('status') != 'pending':
+                raise ServiceRequestError('No hay una re-cotización pendiente de respuesta', 409)
+            if request.get('status') not in self.REQUOTE_STATUSES:
+                raise ServiceRequestError('La solicitud ya no admite cambios de precio', 409)
+
+            now = _now_ms()
+            requote = dict(requote)
+            requote['status'] = 'accepted' if accept else 'rejected'
+            requote['answered_at'] = now
+            request['requote'] = requote
+            if accept:
+                request['quoted_price'] = requote['price']
+            request['last_updated'] = now
+
+        request = self._transact_request(request_id, update)
+        notification_type = 'requote_accepted' if accept else 'requote_rejected'
+        logger.info(f"Requote of request {request_id}: {notification_type}")
+        self.notifications.notify(notification_type, request_id, request)
+        return request
+
     # ---------- método de pago ----------
 
     def set_payment_method(self, client_uid, request_id, payment_method):

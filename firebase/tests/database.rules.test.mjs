@@ -164,6 +164,16 @@ test('trabajador acepta (final: al cotizar, en el backend) y no inicia viaje sin
   await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'in_progress' }));
   await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'completed' }));
 });
+test('final: no se termina el servicio con una re-cotización pendiente', { skip: STAGE1 }, async () => {
+  await admin((d) => update(ref(d, `requests/${REQ}`), {
+    status: 'in_progress', quoted_price: 50000, quote_status: 'accepted',
+    requote: { price: 70000, reason_code: 'dificultad', reason_text: '', status: 'pending', requested_at: 1 },
+  }));
+  await assertFails(update(ref(db(WORKER), `requests/${REQ}`), { status: 'completed' }));
+  await assertFails(update(ref(db(CLIENT), `requests/${REQ}`), { 'requote/status': 'accepted' }));
+  await admin((d) => update(ref(d, `requests/${REQ}/requote`), { status: 'rejected', answered_at: 2 }));
+  await assertSucceeds(update(ref(db(WORKER), `requests/${REQ}`), { status: 'completed' }));
+});
 test('trabajador no salta estados ni reasigna la solicitud', async () => {
   await assertFails(update(ref(db(WORKER), `requests/${REQ}`), { status: 'completed' }));
   await assertFails(update(ref(db(WORKER), `requests/${REQ}`), { worker_id: OTHER }));

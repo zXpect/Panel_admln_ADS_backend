@@ -10,6 +10,8 @@ from .views import (
     QuoteRejectView,
     QuoteSubmitView,
     RatingView,
+    RequoteAnswerView,
+    RequoteView,
     ScheduleView,
     ServiceRequestCreateView,
 )
@@ -25,6 +27,9 @@ urlpatterns = [
     path('requests/<str:request_id>/quote/reject/', QuoteRejectView.as_view(), name='quote-reject'),
     path('requests/<str:request_id>/schedule/', ScheduleView.as_view(), name='schedule'),
     path('requests/<str:request_id>/cancel/', CancelView.as_view(), name='cancel'),
+    path('requests/<str:request_id>/requote/', RequoteView.as_view(), name='requote'),
+    path('requests/<str:request_id>/requote/accept/', RequoteAnswerView.as_view(accept=True), name='requote-accept'),
+    path('requests/<str:request_id>/requote/reject/', RequoteAnswerView.as_view(accept=False), name='requote-reject'),
     path('requests/<str:request_id>/payment-method/', PaymentMethodView.as_view(), name='payment-method'),
     path('requests/<str:request_id>/cash-received/', CashReceivedView.as_view(), name='cash-received'),
     path('requests/<str:request_id>/rating/', RatingView.as_view(), name='rating'),
@@ -42,6 +47,9 @@ SERVICE REQUESTS:
 - POST   /api/requests/{id}/quote/reject/             - Rechazar cotización (cliente)
 - POST   /api/requests/{id}/schedule/                 - Reprogramar (trabajador; avisa al cliente)
 - POST   /api/requests/{id}/cancel/                   - Cancelar con motivo (cliente o trabajador)
+- POST   /api/requests/{id}/requote/                  - Re-cotizar una vez en camino o en progreso (trabajador)
+- POST   /api/requests/{id}/requote/accept/           - Aceptar la re-cotización; cambia el precio (cliente)
+- POST   /api/requests/{id}/requote/reject/           - Rechazar la re-cotización; queda el precio original (cliente)
 - POST   /api/requests/{id}/payment-method/           - Cambiar método de pago antes de terminar (cliente)
 - POST   /api/requests/{id}/cash-received/            - «Recibí el pago» en efectivo (trabajador; avisa al cliente)
 - POST   /api/requests/{id}/rating/                   - Calificar servicio pagado o en efectivo registrado (cliente)

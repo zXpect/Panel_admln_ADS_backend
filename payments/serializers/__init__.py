@@ -14,6 +14,7 @@ from .service_request_serializers import (
     QuoteAcceptSerializer,
     QuoteRejectSerializer,
     PaymentMethodSerializer,
+    RequoteSerializer,
     RatingSerializer,
     NotificationSerializer,
 )
@@ -34,6 +35,7 @@ __all__ = [
     'QuoteAcceptSerializer',
     'QuoteRejectSerializer',
     'PaymentMethodSerializer',
+    'RequoteSerializer',
     'RatingSerializer',
     'NotificationSerializer',
 ]

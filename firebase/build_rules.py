@@ -101,6 +101,8 @@ def status_change(old, new):
 
 def build_requests(stage1):
     quote_gate = () if stage1 else (f"{d('quote_status')} == 'accepted'",)
+    # Final: con una re-cotización sin responder no se termina el servicio (D7)
+    requote_gate = () if stage1 else ("data.child('requote').child('status').val() != 'pending'",)
 
     if stage1:
         protected_fields = PROTECTED_REQUEST_FIELDS
@@ -159,7 +161,7 @@ def build_requests(stage1):
             status_change('pending', 'rejected'),
             AND(status_change('accepted', 'on_the_way'), *quote_gate),
             status_change('on_the_way', 'in_progress'),
-            status_change('in_progress', 'completed'),
+            AND(status_change('in_progress', 'completed'), *requote_gate),
         ),
         *[unchanged(field) for field in RATING_FIELDS],
     )

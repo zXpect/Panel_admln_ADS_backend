@@ -12,6 +12,7 @@ from ..serializers import (
     QuoteRejectSerializer,
     QuoteSubmitSerializer,
     RatingSerializer,
+    RequoteSerializer,
     ScheduleSerializer,
     ServiceRequestCreateSerializer,
 )
@@ -197,6 +198,48 @@ class QuoteAcceptView(AppServiceRequestView):
             data = _quote_data(request_id, updated)
             data['payment_method'] = updated.get('payment_method')
             return Response({'success': True, 'data': data}, status=status.HTTP_200_OK)
+
+        return self.run(request_id, action)
+
+
+def _requote_data(request_id, request):
+    return {
+        'request_id': request_id,
+        'quoted_price': request.get('quoted_price'),
+        'requote': request.get('requote'),
+    }
+
+
+class RequoteView(AppServiceRequestView):
+    """
+    POST /api/requests/<request_id>/requote/   (trabajador)
+    Body: {"price": 165000, "reason_code": "dificultad", "reason_text": ""}
+    Una sola por servicio, en on_the_way o in_progress (D7); avisa al cliente.
+    """
+
+    def post(self, request, request_id):
+        serializer = RequoteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+
+        def action():
+            updated = service_request_service.submit_requote(request.user.uid, request_id, serializer.validated_data)
+            return Response({'success': True, 'data': _requote_data(request_id, updated)}, status=status.HTTP_200_OK)
+
+        return self.run(request_id, action)
+
+
+class RequoteAnswerView(AppServiceRequestView):
+    """
+    POST /api/requests/<request_id>/requote/accept/ · /requote/reject/   (cliente)
+    Al aceptar, quoted_price pasa al nuevo precio; al rechazar, se conserva.
+    """
+    accept = True
+
+    def post(self, request, request_id):
+        def action():
+            updated = service_request_service.answer_requote(request.user.uid, request_id, self.accept)
+            return Response({'success': True, 'data': _requote_data(request_id, updated)}, status=status.HTTP_200_OK)
 
         return self.run(request_id, action)
 

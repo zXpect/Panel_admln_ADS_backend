@@ -102,6 +102,17 @@ class QuoteRejectSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
 
 
+class RequoteSerializer(serializers.Serializer):
+    """Re-cotización (D7): nuevo precio con motivo; el texto, solo con «otro»."""
+    price = StrictIntegerField(min_value=1, help_text='Nuevo precio en pesos COP (entero)')
+    reason_code = serializers.ChoiceField(choices=ADJUSTMENT_REASONS)
+    reason_text = serializers.CharField(max_length=MAX_REASON_TEXT, required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        require_text_with_other(attrs['reason_code'], attrs['reason_text'], 'reason_text')
+        return attrs
+
+
 PAYMENT_METHODS = ('digital', 'cash')
 
 

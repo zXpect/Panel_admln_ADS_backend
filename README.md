@@ -581,6 +581,8 @@ en Wompi, o el trabajador registra el efectivo → el cliente califica.
 | `GET` | `/api/requests/quote-limits/?service_type=X` | App | Rango de precio permitido (COP) |
 | `POST` | `/api/requests/{id}/quote/` | App (trabajador) | `{"quoted_price": 85000}` en COP enteros. Si la solicitud estaba `pending`, pasa a `accepted` |
 | `POST` | `/api/requests/{id}/quote/accept/` | App (cliente) | `{"payment_method": "digital\|cash"}`. Acepta la cotización; queda inmutable |
+| `POST` | `/api/requests/{id}/requote/` | App (trabajador) | `{"price": 165000, "reason_code": "dificultad", "reason_text": ""}`. Una sola re-cotización por servicio, en `on_the_way` o `in_progress` (D7). Mientras esté pendiente, el trabajador no puede marcar `completed` |
+| `POST` | `/api/requests/{id}/requote/accept/` · `requote/reject/` | App (cliente) | Al aceptar, `quoted_price` pasa al nuevo precio; al rechazar, se conserva el original |
 | `POST` | `/api/requests/{id}/payment-method/` | App (cliente) | `{"payment_method": "digital\|cash"}`; cambia el método hasta que el servicio termina |
 | `POST` | `/api/requests/{id}/cash-received/` | App (trabajador) | «Recibí el pago»: crea un `Payment` con `gateway = cash` en `APPROVED`, deja `payment_status = approved` y avisa al cliente |
 | `POST` | `/api/requests/{id}/quote/reject/` | App (cliente) | `{"reason": "..."}`; el trabajador puede volver a cotizar |

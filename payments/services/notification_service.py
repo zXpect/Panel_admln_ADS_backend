@@ -111,6 +111,24 @@ class NotificationService:
             data.update(title='Solicitud cancelada', body=f"{client_name} canceló la solicitud")
             return worker_id, data
 
+        if notification_type == 'requote_received':
+            requote = request.get('requote') or {}
+            data.update(
+                title='Nuevo precio propuesto',
+                body=f"{worker_name} propone cambiar el precio a {format_cop(requote.get('price', 0))}. "
+                     'Acéptalo o recházalo; si lo rechazas, se mantiene el precio original',
+            )
+            return client_id, data
+
+        if notification_type in ('requote_accepted', 'requote_rejected'):
+            if notification_type == 'requote_accepted':
+                data.update(title='Nuevo precio aceptado',
+                            body=f"El cliente aceptó el nuevo precio de {format_cop(request.get('quoted_price', 0))}")
+            else:
+                data.update(title='Nuevo precio rechazado',
+                            body=f"El cliente mantuvo el precio original de {format_cop(request.get('quoted_price', 0))}")
+            return worker_id, data
+
         if notification_type == 'cash_received':
             data.update(
                 title='Pago en efectivo registrado',

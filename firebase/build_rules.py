@@ -229,6 +229,12 @@ def build_workers(stage1):
         *(() if stage1 else (consent_rule(),)),
     )
     worker = {".write": owner}
+    if not stage1:
+        # Oficios y tareas del trabajador (D16, B4-2): listas de slugs que escribe el dueño
+        worker.update({
+            "categories": {"$index": {".validate": "newData.isString()"}},
+            "tasks": {"$index": {".validate": "newData.isString()"}},
+        })
 
     if stage1:
         # Interino: la app actual actualiza el promedio desde el teléfono del

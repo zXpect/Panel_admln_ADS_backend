@@ -609,6 +609,11 @@ cerrar exige respuesta y una PQR cerrada ya no cambia). El plazo `due_at` es de
 (`pqr/services/business_days.py`). Al responder se avisa al autor con el tipo
 `pqr_answered`, que también queda en `notifications/<uid>`.
 
+**Perfil del trabajador** (B12). `GET /api/workers/{id}/stats/` (app) →
+`completed_jobs` (solicitudes `completed`, calificadas o no), `rating` y
+`total_ratings`. No hay contador en Firebase: la app marca `completed`
+directamente, así que se cuenta al consultar.
+
 **Eliminar mi cuenta** (app `accounts/`, D18). `DELETE /api/me/` → `204`.
 Borra el perfil, `Tokens`, `active_workers`, `WorkerDocuments`,
 `notifications` y los archivos del usuario en Storage, cancela sus solicitudes

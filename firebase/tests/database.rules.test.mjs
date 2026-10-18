@@ -1,5 +1,6 @@
 import { test, before, beforeEach, after } from 'node:test';
 import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
 import {
   initializeTestEnvironment, assertSucceeds, assertFails,
 } from '@firebase/rules-unit-testing';
@@ -224,6 +225,23 @@ test('datos de clientes solo para su dueño', async () => {
   await assertSucceeds(get(ref(db(CLIENT), `User/Clientes/${CLIENT}`)));
   await assertFails(get(ref(db(WORKER), `User/Clientes/${CLIENT}`)));
   await assertFails(get(ref(db(CLIENT), 'User/Clientes')));
+});
+
+test('final: oficios y tareas del trabajador son listas de slugs', { skip: STAGE1 }, async () => {
+  const worker = ref(db(WORKER), `User/Trabajadores/${WORKER}`);
+  await assertSucceeds(update(worker, { categories: ['plomeria'], tasks: ['destapar-desague-sanitario', 'reparar-grifo'] }));
+  await assertFails(update(worker, { tasks: [{ slug: 'x' }] }));
+  await assertFails(update(worker, { categories: [5] }));
+  await assertFails(update(ref(db(CLIENT), `User/Trabajadores/${WORKER}`), { tasks: ['x'] }));
+});
+
+test('mapa del trabajador: lee sus solicitudes pendientes con ubicación, no las de otros', async () => {
+  await admin((d) => update(ref(d, `requests/${REQ}`), { lat: 5.3086, lng: -73.815 }));
+  const mine = await get(query(ref(db(WORKER), 'requests'), orderByChild('worker_id'), equalTo(WORKER)));
+  assert.equal(mine.child(`${REQ}/lat`).val(), 5.3086);
+  assert.equal(mine.child('reqOther').exists(), false);
+  await assertFails(get(query(ref(db(WORKER), 'requests'), orderByChild('worker_id'), equalTo('worker2'))));
+  await assertFails(get(query(ref(db(WORKER), 'requests'), orderByChild('status'), equalTo('pending'))));
 });
 
 test('«Mis datos»: el dueño edita nombre, apellido y teléfono', async () => {

@@ -572,6 +572,46 @@ Response:
 }
 ```
 
+### Pagos, cotización y API de la app móvil
+
+App `payments/`. Los endpoints de la app móvil se autentican con el **ID token
+de Firebase** (`Authorization: Bearer <idToken>`, RS256); los del panel, con el
+JWT de `/api/auth/token/`. Todos tienen límite de peticiones (`429` al excederlo).
+La pasarela se elige con `PAGOS_MODO` (`mock` | `wompi`); ver `.env.payments.example`.
+
+Flujo: el trabajador cotiza → el cliente acepta → el servicio avanza hasta
+`completed` → el cliente paga → el cliente califica.
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `GET` | `/api/requests/quote-limits/?service_type=X` | App | Rango de precio permitido (COP) |
+| `POST` | `/api/requests/{id}/quote/` | App (trabajador) | `{"quoted_price": 85000}` en COP enteros. Si la solicitud estaba `pending`, pasa a `accepted` |
+| `POST` | `/api/requests/{id}/quote/accept/` | App (cliente) | Acepta la cotización; queda inmutable |
+| `POST` | `/api/requests/{id}/quote/reject/` | App (cliente) | `{"reason": "..."}`; el trabajador puede volver a cotizar |
+| `POST` | `/api/payments/` | App (cliente) | `{"service_request_id": "...", "redirect_url": "adsapp://..."}` → `reference`, `checkout_url`. El monto lo calcula el servidor (cotización aceptada); un pago abierto de menos de 30 min se reutiliza |
+| `GET` | `/api/payments/{reference}/` | App (cliente/trabajador) o panel | Estado del pago; el panel ve además el historial de eventos |
+| `GET` | `/api/payments/?status=&service_request_id=` | Panel | Listado paginado |
+| `POST` | `/api/requests/{id}/rating/` | App (cliente) | `{"rating": 1-5, "comment": "..."}`; requiere el servicio pagado. Recalcula el promedio del trabajador |
+| `POST` | `/api/notifications/` | App | `{"request_id": "...", "type": "new_request\|request_accepted\|request_rejected\|status_change"}`. FCM desde el backend; el servidor decide destinatario y texto |
+| `POST` | `/api/payments/webhook/` | Pasarela | Eventos de Wompi/mock; se autentica por checksum |
+| `GET/POST` | `/api/payments/mock-checkout/{reference}/` | Navegador | Checkout simulado (solo `PAGOS_MODO=mock`) |
+
+Errores: `{"success": false, "error": "..."}` (o `"errors"` de validación) con
+`400` datos inválidos, `401` sin token válido, `403` no es el participante
+correcto, `404` no existe, `409` el estado de la solicitud no lo permite.
+
+Rangos de precio configurables en el admin de Django (`SystemConfig`):
+`quote_min_price_cop` (por defecto 1000), `quote_max_price_cop` (por defecto
+5000000) y `quote_price_ranges` (JSON por tipo de servicio, p. ej.
+`{"Plomería": {"min": 30000, "max": 800000}}`).
+
+En Firebase, `requests/{id}` gana los campos `quoted_price`, `quote_status`
+(`quoted`/`accepted`/`rejected`), `payment_status`
+(`pending`/`approved`/`declined`/`error`/`voided`) y `payment_reference`, que
+solo escribe el backend (ver `firebase/README.md`).
+
+Pruebas manuales del mock: `python manage.py mock_payment <request_id> <monto_cop>`.
+
 ## Estructura del Proyecto
 
 ```

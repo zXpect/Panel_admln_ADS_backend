@@ -28,6 +28,13 @@ urlpatterns = [
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
+    # Pricing App (catálogo y estimado; antes de payments.request_urls)
+    path('api/', include('pricing.urls')),
+
+    # Payments App
+    path('api/payments/', include('payments.urls')),
+    path('api/', include('payments.request_urls')),
+
     # Worker Verification App
     path('api/', include('worker_verification.urls')),
 ]

@@ -29,6 +29,8 @@ INSTALLED_APPS = [
     
     # Local apps
     'worker_verification',
+    'payments',
+    'pricing',
 ]
 
 MIDDLEWARE = [
@@ -121,6 +123,15 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.MultiPartParser',
         'rest_framework.parsers.FormParser',
     ],
+    # Límites por endpoint (ScopedRateThrottle). Caché local: en producción con
+    # varios workers de gunicorn conviene una caché compartida (Redis/BD).
+    'DEFAULT_THROTTLE_RATES': {
+        'payments': '30/min',
+        'payments_webhook': '120/min',
+        'service_requests': '30/min',
+        'ratings': '10/min',
+        'notifications': '60/min',
+    },
 }
 
 # ==================== JWT SETTINGS ====================
@@ -186,6 +197,28 @@ FIREBASE_CONFIG = {
     'STORAGE_BUCKET': config('FIREBASE_STORAGE_BUCKET', default=''),
 }
 
+# ==================== PAYMENTS SETTINGS ====================
+DJANGO_ENV = config('DJANGO_ENV', default='development')
+
+# PAGOS_MODO=mock|wompi. El mock está prohibido en producción (ver payments/guards.py)
+PAYMENTS = {
+    'MODE': config('PAGOS_MODO', default='mock'),
+    'CURRENCY': 'COP',
+    'WOMPI': {
+        'PUBLIC_KEY': config('WOMPI_PUBLIC_KEY', default=''),
+        'PRIVATE_KEY': config('WOMPI_PRIVATE_KEY', default=''),
+        'EVENTS_SECRET': config('WOMPI_EVENTS_SECRET', default=''),
+        'INTEGRITY_SECRET': config('WOMPI_INTEGRITY_SECRET', default=''),
+        'BASE_URL': config('WOMPI_BASE_URL', default='https://sandbox.wompi.co/v1'),
+    },
+    'MOCK': {
+        'EVENTS_SECRET': config('MOCK_EVENTS_SECRET', default=''),
+        'INTEGRITY_SECRET': config('MOCK_INTEGRITY_SECRET', default=''),
+        # URL con la que el teléfono/emulador llega al backend (emulador: http://10.0.2.2:8000)
+        'CHECKOUT_BASE_URL': config('MOCK_CHECKOUT_BASE_URL', default='http://localhost:8000'),
+    },
+}
+
 # ==================== LOGGING ====================
 LOGGING = {
     'version': 1,
@@ -213,6 +246,10 @@ LOGGING = {
             'level': 'INFO',
         },
         'worker_verification': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+        },
+        'payments': {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
         },

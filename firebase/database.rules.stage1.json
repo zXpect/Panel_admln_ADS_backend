@@ -1,0 +1,91 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "User": {
+      "Clientes": {
+        "$uid": {
+          ".read": "(auth != null && auth.uid == $uid)",
+          ".write": "((auth != null && auth.uid == $uid) && newData.exists())"
+        }
+      },
+      "Trabajadores": {
+        ".read": "auth != null",
+        ".indexOn": [
+          "isAvailable",
+          "isActive",
+          "work",
+          "email"
+        ],
+        "$uid": {
+          ".write": "(auth != null && auth.uid == $uid && newData.exists() && ((data.exists() && newData.child('rating').val() == data.child('rating').val() && newData.child('totalRatings').val() == data.child('totalRatings').val()) || (!data.exists() && (newData.child('rating').val() == null || newData.child('rating').val() == 0) && (newData.child('totalRatings').val() == null || newData.child('totalRatings').val() == 0))) && newData.child('isActive').val() == data.child('isActive').val() && (newData.child('verificationStatus').child('status').val() == data.child('verificationStatus').child('status').val() || newData.child('verificationStatus').child('status').val() == 'documents_submitted'))",
+          "rating": {
+            ".write": "((auth != null && auth.uid != $uid && data.parent().exists()) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 5)"
+          },
+          "totalRatings": {
+            ".write": "((auth != null && auth.uid != $uid && data.parent().exists()) && newData.isNumber() && newData.val() == (data.exists() ? data.val() : 0) + 1)"
+          },
+          "timestamp": {
+            ".write": "((auth != null && auth.uid != $uid && data.parent().exists()) && newData.isNumber())"
+          }
+        }
+      }
+    },
+    "active_workers": {
+      ".read": "auth != null",
+      ".indexOn": [
+        "g"
+      ],
+      "$uid": {
+        ".write": "(auth != null && auth.uid == $uid)"
+      }
+    },
+    "Tokens": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "(auth != null && auth.uid == $uid)"
+      }
+    },
+    "WorkerDocuments": {
+      "$uid": {
+        ".read": "(auth != null && auth.uid == $uid)",
+        ".write": "(auth != null && auth.uid == $uid)",
+        "$category": {
+          "status": {
+            ".validate": "newData.val() == data.val() || newData.val() == 'pending'"
+          },
+          "reviewedBy": {
+            ".validate": "newData.val() == data.val()"
+          },
+          "reviewedAt": {
+            ".validate": "newData.val() == data.val() || newData.val() == 0"
+          },
+          "$subcategory": {
+            "$documentId": {
+              "status": {
+                ".validate": "newData.val() == data.val() || newData.val() == 'pending'"
+              },
+              "reviewedBy": {
+                ".validate": "newData.val() == data.val()"
+              },
+              "reviewedAt": {
+                ".validate": "newData.val() == data.val() || newData.val() == 0"
+              }
+            }
+          }
+        }
+      }
+    },
+    "requests": {
+      ".indexOn": [
+        "client_id",
+        "worker_id"
+      ],
+      ".read": "(auth != null && (query.orderByChild == 'client_id' || query.orderByChild == 'worker_id') && query.equalTo == auth.uid)",
+      "$requestId": {
+        ".read": "(auth != null && (data.child('client_id').val() == auth.uid || data.child('worker_id').val() == auth.uid))",
+        ".write": "(auth != null && newData.exists() && ((!data.exists() && newData.child('client_id').val() == auth.uid && newData.child('worker_id').isString() && newData.child('status').val() == 'pending' && !newData.child('quoted_price').exists() && !newData.child('quote_status').exists() && !newData.child('quoted_at').exists() && !newData.child('quote_accepted_at').exists() && !newData.child('quote_rejection_reason').exists() && !newData.child('payment_status').exists() && !newData.child('payment_reference').exists() && !newData.child('payment_updated_at').exists() && newData.child('is_rated').val() != true && !newData.child('client_rating').exists()) || (data.exists() && newData.child('client_id').val() == data.child('client_id').val() && newData.child('worker_id').val() == data.child('worker_id').val() && newData.child('quoted_price').val() == data.child('quoted_price').val() && newData.child('quote_status').val() == data.child('quote_status').val() && newData.child('quoted_at').val() == data.child('quoted_at').val() && newData.child('quote_accepted_at').val() == data.child('quote_accepted_at').val() && newData.child('quote_rejection_reason').val() == data.child('quote_rejection_reason').val() && newData.child('payment_status').val() == data.child('payment_status').val() && newData.child('payment_reference').val() == data.child('payment_reference').val() && newData.child('payment_updated_at').val() == data.child('payment_updated_at').val() && ((auth.uid == data.child('client_id').val() && (newData.child('status').val() == data.child('status').val() || (data.child('status').val() == 'pending' && newData.child('status').val() == 'cancelled') || ((data.child('status').val() == 'accepted' && newData.child('status').val() == 'cancelled') && data.child('quote_status').val() != 'accepted')) && ((newData.child('is_rated').val() != true || data.child('is_rated').val() == true || data.child('status').val() == 'completed') && (data.child('is_rated').val() != true || (newData.child('client_rating').val() == data.child('client_rating').val() && newData.child('client_comment').val() == data.child('client_comment').val())))) || (auth.uid == data.child('worker_id').val() && (newData.child('status').val() == data.child('status').val() || (data.child('status').val() == 'pending' && newData.child('status').val() == 'accepted') || (data.child('status').val() == 'pending' && newData.child('status').val() == 'rejected') || ((data.child('status').val() == 'accepted' && newData.child('status').val() == 'on_the_way')) || (data.child('status').val() == 'on_the_way' && newData.child('status').val() == 'in_progress') || (data.child('status').val() == 'in_progress' && newData.child('status').val() == 'completed')) && newData.child('is_rated').val() == data.child('is_rated').val() && newData.child('client_rating').val() == data.child('client_rating').val() && newData.child('client_comment').val() == data.child('client_comment').val() && newData.child('rated_at').val() == data.child('rated_at').val())))))"
+      }
+    }
+  }
+}

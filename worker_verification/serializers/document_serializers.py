@@ -40,16 +40,19 @@ class DocumentSerializer(serializers.Serializer):
 
 class DocumentApprovalSerializer(serializers.Serializer):
     """
-    Serializer para aprobar documentos
+    Serializer para aprobar documentos.
+    El revisor es siempre el usuario autenticado (request.user); `reviewerId`
+    se acepta solo por compatibilidad con clientes antiguos y se ignora.
     """
-    reviewerId = serializers.CharField(required=True)
+    reviewerId = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class DocumentRejectionSerializer(serializers.Serializer):
     """
-    Serializer para rechazar documentos
+    Serializer para rechazar documentos.
+    Igual que en la aprobación, `reviewerId` se ignora: el revisor es request.user.
     """
-    reviewerId = serializers.CharField(required=True)
+    reviewerId = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     reason = serializers.CharField(required=True, min_length=10)
     
     def validate_reason(self, value):

@@ -589,7 +589,12 @@ en Wompi, o el trabajador registra el efectivo → el cliente califica.
 | `POST` | `/api/requests/{id}/quote/reject/` | App (cliente) | `{"reason": "..."}`; el trabajador puede volver a cotizar |
 | `POST` | `/api/payments/` | App (cliente) | `{"service_request_id": "...", "redirect_url": "adsapp://..."}` → `reference`, `checkout_url`. El monto lo calcula el servidor (cotización aceptada); un pago abierto de menos de 30 min se reutiliza |
 | `GET` | `/api/payments/{reference}/` | App (cliente/trabajador) o panel | Estado del pago; el panel ve además el historial de eventos |
-| `GET` | `/api/payments/?status=&service_request_id=` | Panel | Listado paginado |
+| `GET` | `/api/payments/?status=&gateway=&service_request_id=&date_from=&date_to=` | Panel | Listado paginado con `summary` (pagos aprobados: cantidad y total en COP, en general y por pasarela) |
+| `GET` | `/api/admin/catalog/` | Panel | Oficios y tareas, incluidos los inactivos, con la referencia sin factor regional |
+| `PATCH` | `/api/admin/catalog/categories/{id}/` | Panel | `name`, `order`, `is_active` (el slug no cambia) |
+| `POST` · `PATCH` | `/api/admin/catalog/tasks/` · `tasks/{id}/` | Panel | Crear o editar tareas; no se borran, se desactivan |
+| `GET` · `PATCH` | `/api/admin/config/` · `config/{key}/` | Panel | Parámetros de cotización y búsqueda, con formato y rango validados |
+| `GET` | `/api/admin/audit/?entity=` | Panel | Historial de `ConfigAuditLog` (cada cambio del panel queda ahí con su administrador) |
 | `POST` | `/api/requests/{id}/rating/` | App (cliente) | `{"rating": 1-5, "comment": "..."}`; requiere el servicio pagado (digital o efectivo registrado). Recalcula el promedio del trabajador |
 | `POST` | `/api/notifications/` | App | `{"request_id": "...", "type": "new_request\|request_accepted\|request_rejected\|status_change"}`. FCM desde el backend; el servidor decide destinatario y texto |
 | `POST` | `/api/payments/webhook/` | Pasarela | Eventos de Wompi/mock; se autentica por checksum |

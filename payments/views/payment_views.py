@@ -17,8 +17,18 @@ from ..services.payment_service import payment_service
 from ..services.service_request_service import ServiceRequestError
 from .common import APP_OR_PANEL_AUTHENTICATION, error_response, validation_error_response
 import logging
+from datetime import datetime
+
+from django.db.models import Count, Sum
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_date(value):
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None
 
 
 class PaymentListCreateView(APIView):
@@ -29,7 +39,8 @@ class PaymentListCreateView(APIView):
         El monto lo calcula el servidor; cualquier monto enviado se ignora.
 
     GET  /api/payments/  (panel admin)
-        Lista paginada. Filtros: ?status=APPROVED&service_request_id=...
+        Lista paginada con resumen. Filtros: ?status=APPROVED&gateway=cash
+        &service_request_id=...&date_from=2026-10-01&date_to=2026-10-31
     """
     authentication_classes = APP_OR_PANEL_AUTHENTICATION
     throttle_classes = [ScopedRateThrottle]
@@ -49,6 +60,25 @@ class PaymentListCreateView(APIView):
         request_filter = request.query_params.get('service_request_id')
         if request_filter:
             payments = payments.filter(service_request_id=request_filter)
+        gateway_filter = request.query_params.get('gateway')
+        if gateway_filter:
+            payments = payments.filter(gateway=gateway_filter.lower())
+        for param, lookup in (('date_from', 'created_at__date__gte'), ('date_to', 'created_at__date__lte')):
+            raw = request.query_params.get(param)
+            if raw:
+                parsed = _parse_date(raw)
+                if parsed is None:
+                    return validation_error_response({param: ['Usa el formato AAAA-MM-DD']})
+                payments = payments.filter(**{lookup: parsed})
+
+        approved = payments.filter(status=Payment.STATUS_APPROVED)
+        by_gateway = approved.values('gateway').annotate(count=Count('id'), total=Sum('amount_in_cents'))
+        summary = {
+            'approved_count': approved.count(),
+            'approved_total_cop': (approved.aggregate(total=Sum('amount_in_cents'))['total'] or 0) // 100,
+            'approved_by_gateway': {row['gateway']: {'count': row['count'], 'total_cop': row['total'] // 100}
+                                    for row in by_gateway},
+        }
 
         paginator = PageNumberPagination()
         page = paginator.paginate_queryset(payments, request, view=self)
@@ -59,6 +89,7 @@ class PaymentListCreateView(APIView):
             'count': paginator.page.paginator.count,
             'next': paginator.get_next_link(),
             'previous': paginator.get_previous_link(),
+            'summary': summary,
             'data': serializer.data
         }, status=status.HTTP_200_OK)
 

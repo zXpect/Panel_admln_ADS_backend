@@ -210,6 +210,29 @@ class PaymentApiTests(AppApiTestCase):
         self.assertEqual(response.json()['count'], 1)
         self.assertEqual(panel.get(reverse('payments:payment-list'), {'status': 'APPROVED'}).json()['count'], 0)
 
+    def test_panel_list_gateway_date_filters_and_summary(self):
+        Payment.objects.create(reference='ADS-CASH', service_request_id='req-9', client_uid=CLIENT,
+                               worker_uid=WORKER, amount_in_cents=5000000, status=Payment.STATUS_APPROVED,
+                               gateway=Payment.GATEWAY_CASH)
+        Payment.objects.create(reference='ADS-MOCK', service_request_id='req-8', client_uid=CLIENT,
+                               worker_uid=WORKER, amount_in_cents=8500000, status=Payment.STATUS_APPROVED,
+                               gateway=Payment.GATEWAY_MOCK)
+        panel = APIClient()
+        panel.force_authenticate(User.objects.create_user('admin', password='x'))
+        url = reverse('payments:payment-list')
+
+        body = panel.get(url).json()
+        self.assertEqual(body['summary'], {
+            'approved_count': 2, 'approved_total_cop': 135000,
+            'approved_by_gateway': {'cash': {'count': 1, 'total_cop': 50000},
+                                    'mock': {'count': 1, 'total_cop': 85000}},
+        })
+        self.assertEqual(panel.get(url, {'gateway': 'cash'}).json()['count'], 1)
+        today = timezone.now().date().isoformat()
+        self.assertEqual(panel.get(url, {'date_from': today, 'date_to': today}).json()['count'], 2)
+        self.assertEqual(panel.get(url, {'date_from': '2099-01-01'}).json()['count'], 0)
+        self.assertEqual(panel.get(url, {'date_from': '18/10/2026'}).status_code, 400)
+
 
 class RatingTests(AppApiTestCase):
 

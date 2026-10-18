@@ -100,22 +100,14 @@ python manage.py createsuperuser
 
 ### 1. Variables de Entorno
 
-Crear un archivo `.env` en la raíz del proyecto:
+Copiar la plantilla y llenar los valores (todas las claves están comentadas en
+`.env.example`; las del módulo de pagos, en `.env.payments.example`):
 
-```env
-# Django
-SECRET_KEY=tu-secret-key-super-segura
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-
-# CORS
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-# Firebase
-FIREBASE_CREDENTIALS_PATH=firebase-credentials.json
-FIREBASE_DATABASE_URL=https://tu-proyecto.firebaseio.com
-FIREBASE_STORAGE_BUCKET=tu-proyecto.appspot.com
+```bash
+cp .env.example .env
 ```
+
+No subir nunca el `.env` ni la llave de Firebase: ambos están en `.gitignore`.
 
 ### 2. Configuración de Firebase
 
@@ -124,7 +116,7 @@ FIREBASE_STORAGE_BUCKET=tu-proyecto.appspot.com
 3. Ir a Configuración del proyecto > Cuentas de servicio
 4. Generar nueva clave privada
 5. Descargar el archivo JSON
-6. Guardar como `firebase-credentials.json` en la raíz del proyecto
+6. Guardar como `serviceAccountKey.json` en `backend/` (o cambiar `FIREBASE_CREDENTIALS_PATH`)
 
 ### 3. Estructura de Firebase Database
 

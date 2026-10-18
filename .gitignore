@@ -15,9 +15,6 @@ logs/
 __pycache__/
 */__pycache__/
 
-# Migraciones de Django
-worker_verification/migrations/
-
 # Firebase (reglas y emulador)
 firebase/node_modules/
 firebase-debug.log

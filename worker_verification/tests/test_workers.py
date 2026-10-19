@@ -26,8 +26,17 @@ class WorkerQueryTests(PanelTestCase):
         self.assertEqual(self.ids(self.client.get(WORKERS, {'search': 'rojas'})), {ANA})
         self.assertEqual(self.ids(self.client.get(WORKERS, {'search': 'beto@'})), {BETO})
         self.assertEqual(self.ids(self.client.get(WORKERS, {'search': 'pint'})), {CARO})
-        # El filtro por oficio todavía compara el texto viejo de `work` (DEF-10 en contexto/pruebas/DEFECTOS.md)
-        self.assertEqual(self.ids(self.client.get(WORKERS, {'category': 'Electricista'})), {BETO})
+
+    def test_category_filter_uses_catalog_slugs(self):
+        # DEF-10: el panel filtra con el slug; antes se comparaba con el texto viejo de `work`
+        self.assertEqual(self.ids(self.client.get(WORKERS, {'category': 'plomeria'})), {ANA})
+        # Sin `categories` (Beto, Caro) el oficio se deduce de `work`
+        self.assertEqual(self.ids(self.client.get(WORKERS, {'category': 'electricidad'})), {BETO})
+        self.assertEqual(self.ids(self.client.get(WORKERS, {'category': 'Pintor'})), {CARO})
+        # Un trabajador con varios oficios aparece en cada uno
+        self.fb.set_data(f'User/Trabajadores/{ANA}/categories', ['plomeria', 'electricidad'])
+        self.assertEqual(self.ids(self.client.get(WORKERS, {'category': 'electricidad'})), {ANA, BETO})
+        self.assertEqual(self.ids(self.client.get(WORKERS, {'category': 'ferreteria'})), set())
 
     def test_empty_database(self):
         self.fb.set_data('User/Trabajadores', None)
@@ -43,7 +52,10 @@ class WorkerQueryTests(PanelTestCase):
     def test_statistics(self):
         data = self.client.get(f'{WORKERS}statistics/').json()['data']
         self.assertEqual((data['total'], data['available'], data['online']), (3, 2, 1))
-        self.assertEqual(data['by_category'], {'Plomería': 1, 'Electricista': 1, 'Pintor': 1})
+        self.assertEqual(data['by_category'], {'plomeria': 1, 'electricidad': 1, 'pintura': 1})
+        self.fb.set_data(f'User/Trabajadores/{CARO}/work', 'Ferretería')
+        by_category = self.client.get(f'{WORKERS}statistics/').json()['data']['by_category']
+        self.assertEqual(by_category, {'plomeria': 1, 'electricidad': 1, 'sin_oficio': 1})
 
     def test_firebase_error_is_500(self):
         with mock.patch.object(self.fb, 'get_data', side_effect=Exception('caído')):

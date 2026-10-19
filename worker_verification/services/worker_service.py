@@ -1,3 +1,5 @@
+from pricing.services.worker_categories import legacy_work_to_category, worker_categories
+
 from .firebase_service import firebase_service
 import logging
 from datetime import datetime
@@ -68,35 +70,31 @@ class WorkerService:
     
     def get_workers_by_category(self, category):
         """
-        Obtiene trabajadores por categoría de trabajo
-        
-        Args:
-            category (str): Categoría de trabajo
-            
+        Trabajadores de un oficio. Acepta el slug del catálogo ('plomeria') o
+        un nombre viejo ('Plomero'). Usa `categories` y, si un trabajador aún
+        no lo tiene, el oficio que se deduce de `work` (D16).
+
         Returns:
             list: Lista de trabajadores
         """
         try:
-            workers = self.firebase.query_data(
-                self.WORKERS_PATH,
-                order_by='work',
-                equal_to=category
-            )
-            
-            if not workers:
+            valid_slugs = self._valid_category_slugs()
+            slug = legacy_work_to_category(category, valid_slugs)
+            if slug is None:
                 return []
-            
-            workers_list = []
-            for worker_id, worker_data in workers.items():
-                worker_data['id'] = worker_id
-                workers_list.append(worker_data)
-            
-            logger.info(f"Retrieved {len(workers_list)} workers in category {category}")
-            return workers_list
+            workers = [worker for worker in (self.get_all_workers() or [])
+                       if slug in worker_categories(worker, valid_slugs)]
+            logger.info(f"Retrieved {len(workers)} workers in category {slug}")
+            return workers
         except Exception as e:
             logger.error(f"Error getting workers by category: {str(e)}")
             raise
-    
+
+    @staticmethod
+    def _valid_category_slugs():
+        from pricing.models import ServiceCategory
+        return set(ServiceCategory.objects.values_list('slug', flat=True))
+
     def get_available_workers(self):
         """
         Obtiene trabajadores disponibles
@@ -497,6 +495,7 @@ class WorkerService:
                     'by_category': {}
                 }
             
+            valid_slugs = self._valid_category_slugs()
             stats = {
                 'total': len(all_workers),
                 'available': 0,
@@ -520,9 +519,10 @@ class WorkerService:
                     if verification_status.get('status') == 'approved':
                         stats['verified'] += 1
                 
-                # Contar por categoría
-                category = worker.get('work', 'Sin categoría')
-                stats['by_category'][category] = stats['by_category'].get(category, 0) + 1
+                # Contar por oficio (slug del catálogo; un trabajador puede tener hasta tres)
+                slugs = worker_categories(worker, valid_slugs) or {'sin_oficio'}
+                for slug in slugs:
+                    stats['by_category'][slug] = stats['by_category'].get(slug, 0) + 1
             
             logger.info(f"Worker statistics calculated")
             return stats

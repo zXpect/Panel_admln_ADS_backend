@@ -38,7 +38,7 @@ class DashboardTests(PanelTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()['data']
         self.assertEqual(data['workers'], {'total': 3, 'verified': 1, 'available': 2, 'online': 1,
-                                           'byCategory': {'Plomería': 1, 'Electricista': 1, 'Pintor': 1}})
+                                           'byCategory': {'plomeria': 1, 'electricidad': 1, 'pintura': 1}})
         self.assertEqual(data['clients'], {'total': 2})
         documents = data['documents']
         self.assertEqual((documents['total'], documents['pending'], documents['approved'], documents['rejected'],

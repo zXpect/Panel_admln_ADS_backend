@@ -225,6 +225,12 @@ PAYMENTS = {
         'INTEGRITY_SECRET': config('WOMPI_INTEGRITY_SECRET', default=''),
         'BASE_URL': config('WOMPI_BASE_URL', default='https://sandbox.wompi.co/v1'),
     },
+    # URL pública https del backend: Wompi vuelve a <base>/api/payments/return/,
+    # que abre la app (no acepta el deep link adsapp:// como redirect-url).
+    # En Render se deduce de RENDER_EXTERNAL_HOSTNAME.
+    'PUBLIC_BASE_URL': config(
+        'PUBLIC_BASE_URL',
+        default=f"https://{RENDER_EXTERNAL_HOSTNAME}" if RENDER_EXTERNAL_HOSTNAME else ''),
     'MOCK': {
         'EVENTS_SECRET': config('MOCK_EVENTS_SECRET', default=''),
         'INTEGRITY_SECRET': config('MOCK_INTEGRITY_SECRET', default=''),

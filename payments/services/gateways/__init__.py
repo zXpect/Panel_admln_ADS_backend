@@ -31,6 +31,7 @@ def get_gateway():
             integrity_secret=wompi['INTEGRITY_SECRET'],
             events_secret=wompi['EVENTS_SECRET'],
             base_url=wompi['BASE_URL'],
+            public_base_url=config.get('PUBLIC_BASE_URL', ''),
         )
     except ValueError as e:
         raise ImproperlyConfigured(f"PAGOS_MODO=wompi: {e}") from e

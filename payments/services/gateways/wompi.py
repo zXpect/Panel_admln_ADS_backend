@@ -1,5 +1,5 @@
 import logging
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
@@ -25,13 +25,32 @@ class WompiGateway(BaseGateway):
     CHECKOUT_URL = 'https://checkout.wompi.co/p/'
     TIMEOUT_SECONDS = 10
 
-    def __init__(self, public_key, private_key, integrity_secret, events_secret, base_url):
+    def __init__(self, public_key, private_key, integrity_secret, events_secret, base_url, public_base_url=''):
         super().__init__(integrity_secret, events_secret)
         if not public_key or not private_key:
             raise ValueError('Faltan las llaves pública y privada de Wompi')
         self.public_key = public_key
         self.private_key = private_key
         self.base_url = base_url.rstrip('/')
+        self.public_base_url = public_base_url.rstrip('/')
+
+    def checkout_redirect_url(self, redirect_url):
+        """
+        Wompi solo acepta redirect-url https. El deep link de la app
+        (adsapp://payment-result?request_id=...) se cambia por la página de
+        regreso del backend, que abre la app con el mismo request_id. Sin URL
+        pública (desarrollo local) no se envía: Wompi muestra su propio resultado.
+        """
+        if not redirect_url or urlparse(redirect_url).scheme in ('http', 'https'):
+            return redirect_url
+        if not self.public_base_url:
+            return None
+        params = {}
+        request_id = parse_qs(urlparse(redirect_url).query).get('request_id')
+        if request_id:
+            params['request_id'] = request_id[0]
+        query = urlencode(params)
+        return f"{self.public_base_url}/api/payments/return/" + (f"?{query}" if query else '')
 
     def create_transaction(self, reference, amount_in_cents, currency, redirect_url=None):
         """
@@ -46,6 +65,7 @@ class WompiGateway(BaseGateway):
             'reference': reference,
             'signature:integrity': signature,
         }
+        redirect_url = self.checkout_redirect_url(redirect_url)
         if redirect_url:
             params['redirect-url'] = redirect_url
 

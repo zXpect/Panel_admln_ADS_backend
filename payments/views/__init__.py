@@ -1,4 +1,5 @@
 from .webhook_views import PaymentWebhookView
+from .return_views import PaymentReturnView
 from .mock_checkout_views import MockCheckoutView
 from .payment_views import PaymentListCreateView, PaymentDetailView
 from .service_request_views import (
@@ -19,6 +20,7 @@ from .service_request_views import (
 
 __all__ = [
     'PaymentWebhookView',
+    'PaymentReturnView',
     'MockCheckoutView',
     'PaymentListCreateView',
     'PaymentDetailView',

@@ -228,7 +228,8 @@ class PaymentApiTests(AppApiTestCase):
                                     'mock': {'count': 1, 'total_cop': 85000}},
         })
         self.assertEqual(panel.get(url, {'gateway': 'cash'}).json()['count'], 1)
-        today = timezone.now().date().isoformat()
+        # created_at__date se compara en la zona horaria del proyecto
+        today = timezone.localdate().isoformat()
         self.assertEqual(panel.get(url, {'date_from': today, 'date_to': today}).json()['count'], 2)
         self.assertEqual(panel.get(url, {'date_from': '2099-01-01'}).json()['count'], 0)
         self.assertEqual(panel.get(url, {'date_from': '18/10/2026'}).status_code, 400)

@@ -51,7 +51,6 @@ class WompiGatewayTests(SimpleTestCase):
             'amount-in-cents': '8500000',
             'reference': 'ADS-REF-1',
             'signature:integrity': integrity_signature('ADS-REF-1', 8500000, 'COP', 'test_integrity_abc'),
-            'redirect-url': 'adsapp://payment-result',
         })
 
     def test_requires_keys(self):
@@ -176,3 +175,36 @@ class WompiPaymentFlowTests(AppApiTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(Payment.objects.get(reference=reference).status, 'DECLINED')
         self.assertEqual(Payment.objects.count(), 2)
+
+
+class WompiRedirectTests(SimpleTestCase):
+    """Wompi solo acepta redirect-url https: el deep link pasa por /api/payments/return/."""
+
+    def gateway(self, public_base_url='https://ads-api.onrender.com'):
+        return WompiGateway(WOMPI['PUBLIC_KEY'], WOMPI['PRIVATE_KEY'], WOMPI['INTEGRITY_SECRET'],
+                            WOMPI['EVENTS_SECRET'], WOMPI['BASE_URL'], public_base_url)
+
+    def redirect_param(self, gateway, redirect_url):
+        url = gateway.create_transaction('ADS-REF-1', 8500000, 'COP', redirect_url).checkout_url
+        return parse_qs(urlparse(url).query).get('redirect-url', [None])[0]
+
+    def test_deep_link_becomes_https_return_page(self):
+        self.assertEqual(self.redirect_param(self.gateway(), 'adsapp://payment-result?request_id=-Abc123'),
+                         'https://ads-api.onrender.com/api/payments/return/?request_id=-Abc123')
+        self.assertEqual(self.redirect_param(self.gateway(), 'adsapp://payment-result'),
+                         'https://ads-api.onrender.com/api/payments/return/')
+
+    def test_without_public_url_redirect_is_omitted(self):
+        self.assertIsNone(self.redirect_param(self.gateway(''), 'adsapp://payment-result?request_id=x'))
+
+    def test_return_page_opens_only_the_app(self):
+        response = self.client.get(reverse('payments:return'), {'request_id': '-Abc123', 'id': 'wompi-1'})
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('intent://payment-result?request_id=-Abc123#Intent;scheme=adsapp;package=com.project.ads;end',
+                      html)
+        self.assertIn('window.location.replace("adsapp://payment', html)
+
+        html = self.client.get(reverse('payments:return'), {'request_id': 'https://evil.example/x'}).content.decode()
+        self.assertNotIn('evil.example', html)
+        self.assertIn('href="intent://payment-result#Intent;scheme=adsapp;package=com.project.ads;end"', html)

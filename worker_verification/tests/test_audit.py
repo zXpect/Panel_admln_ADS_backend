@@ -5,9 +5,9 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import VerificationLog
-from .services.document_service import document_service
-from .services.worker_service import worker_service
+from ..models import VerificationLog
+from ..services.document_service import document_service
+from ..services.worker_service import worker_service
 
 WORKER = 'worker-1'
 APPROVE_URL = '/api/documents/approve/'

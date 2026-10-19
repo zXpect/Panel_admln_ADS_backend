@@ -182,6 +182,8 @@ class WorkerService:
 
             if not user_id:
                 raise ValueError(f"Error creando usuario en Firebase Auth: {auth_error}")
+            if auth_error is not None and bulk_worker_service.account_in_use(user_id):
+                raise ValueError('El correo ya pertenece a una cuenta de ADS')
 
             # Agregar ID y timestamp
             worker_data['id'] = user_id

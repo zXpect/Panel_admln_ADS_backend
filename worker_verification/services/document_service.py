@@ -597,12 +597,12 @@ class DocumentService:
             # Verificar mínimo de cartas (3)
             result['hasMinimumCartas'] = result['cartasCount'] >= 3
         
-            # Verificar si está completo 
+            # Completo: hoja de vida y antecedentes, más un título o al menos tres cartas
+            # (misma regla que DocumentRequirementCheckSerializer y el README)
             result['isComplete'] = (
-                result['hasHojaVida'] and 
-                result['hasAntecedentes'] and 
-                result['hasTitulo'] and
-                result['hasMinimumCartas']
+                result['hasHojaVida'] and
+                result['hasAntecedentes'] and
+                (result['hasTitulo'] or result['hasMinimumCartas'])
             )
         
             logger.info(f"Document verification for worker {worker_id}: {result}")

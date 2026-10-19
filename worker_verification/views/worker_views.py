@@ -20,6 +20,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Los escribe el servidor (calificación); un PUT del panel no los toca
+SERVER_OWNED_FIELDS = ('id', 'rating', 'totalRatings', 'timestamp')
+
+
+def _worker_not_found():
+    # update_data de Firebase crearía el nodo: se responde 404 antes de escribir
+    return Response({
+        'success': False,
+        'error': 'Trabajador no encontrado'
+    }, status=status.HTTP_404_NOT_FOUND)
+
 
 class WorkerViewSet(viewsets.ViewSet):
     """
@@ -169,7 +180,11 @@ class WorkerViewSet(viewsets.ViewSet):
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            worker_service.update_worker(pk, serializer.validated_data)
+            # Los valores por defecto del serializer (rating 0, isAvailable true...)
+            # no deben pisar lo guardado: solo se escriben los campos enviados
+            update_data = {key: value for key, value in serializer.validated_data.items()
+                           if key in request.data and key not in SERVER_OWNED_FIELDS}
+            worker_service.update_worker(pk, update_data)
             
             return Response({
                 'success': True,
@@ -254,6 +269,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"isAvailable": true/false}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerAvailabilitySerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -288,6 +305,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"isOnline": true/false}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerOnlineStatusSerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -359,6 +378,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"latitude": 5.34851, "longitude": -73.902605}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerLocationSerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -394,6 +415,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"rating": 4.5}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerRatingSerializer(data=request.data)
             
             if not serializer.is_valid():

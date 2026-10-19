@@ -11,6 +11,10 @@ db.sqlite3
 # Logs
 logs/
 
+# Cobertura de pruebas
+.coverage
+htmlcov/
+
 # Estáticos generados por collectstatic
 staticfiles/
 

@@ -161,14 +161,24 @@ class NotificationService:
         })
 
     def deliver(self, uid, data):
-        """Guarda la notificación en el historial y envía el push."""
-        self.save_to_history(uid, data)
+        """
+        Guarda la notificación en el historial y envía el push con la clave de
+        esa entrada (notificationId), para que la app la marque como leída al abrirlo.
+        """
+        notification_id = self.save_to_history(uid, data)
+        if notification_id:
+            data = {**data, 'notificationId': notification_id}
         return self.send_to_user(uid, data)
 
     # ---------- historial ----------
 
     def save_to_history(self, uid, data):
-        """Guarda notifications/<uid>/<id> = {title, body, type, request_id, read, created_at}."""
+        """
+        Guarda notifications/<uid>/<id> = {title, body, type, request_id, read, created_at}.
+
+        Returns:
+            str: la clave <id> de la entrada, o None si no se pudo guardar
+        """
         try:
             entry = {
                 'title': data.get('title', ''),
@@ -178,11 +188,12 @@ class NotificationService:
                 'read': False,
                 'created_at': int(time.time() * 1000),
             }
-            self.firebase.get_database_reference(f"{self.HISTORY_PATH}/{uid}").push().set(entry)
-            return True
+            ref = self.firebase.get_database_reference(f"{self.HISTORY_PATH}/{uid}").push()
+            ref.set(entry)
+            return ref.key
         except Exception as e:
             logger.error(f"Error saving notification history for {uid}: {str(e)}")
-            return False
+            return None
 
     # ---------- envío ----------
 

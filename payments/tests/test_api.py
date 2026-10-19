@@ -336,7 +336,17 @@ class NotificationApiTests(AppApiTestCase):
         self.assertIsInstance(entry['created_at'], int)
         self.assertIsNone(self.fb.get_data(f"notifications/{CLIENT}"))
 
+    def test_push_carries_history_entry_id(self):
+        self.notify(CLIENT, 'new_request')
+
+        message = self.fcm_send.call_args.args[0]
+        history = self.fb.get_data(f"notifications/{WORKER}")
+        self.assertEqual(list(history), [message.data['notificationId']])
+        # El historial no guarda su propia clave
+        self.assertNotIn('notificationId', history[message.data['notificationId']])
+
     def test_history_failure_does_not_block_push(self):
         with mock.patch.object(self.fb, 'get_database_reference', side_effect=Exception('down')):
             response = self.notify(CLIENT, 'new_request')
         self.assertTrue(response.json()['data']['sent'])
+        self.assertNotIn('notificationId', self.fcm_send.call_args.args[0].data)

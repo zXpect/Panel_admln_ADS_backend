@@ -19,6 +19,11 @@ class ClientTests(PanelTestCase):
         self.assertEqual(self.client.get(f'{CLIENTS}no-existe/').status_code, 404)
         self.assertEqual(self.client.get(f'{CLIENTS}count/').json()['count'], 2)
 
+    def test_list_includes_phone_for_the_table(self):
+        listed = {c['id']: c for c in self.client.get(CLIENTS).json()['data']}
+        self.assertEqual(listed[CLIENT]['phone'], '3109998877')
+        self.assertTrue(listed[CLIENT]['isActive'])
+
     def test_without_clients(self):
         self.fb.set_data('User/Clientes', None)
         self.assertEqual(self.client.get(CLIENTS).json()['count'], 0)

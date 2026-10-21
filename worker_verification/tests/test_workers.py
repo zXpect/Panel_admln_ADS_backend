@@ -49,6 +49,14 @@ class WorkerQueryTests(PanelTestCase):
         self.assertEqual((response.status_code, response.json()['data']['name']), (200, 'Ana'))
         self.assertEqual(self.client.get(f'{WORKERS}no-existe/').status_code, 404)
 
+    def test_list_includes_categories_and_verification_for_the_table(self):
+        workers = {worker['id']: worker for worker in self.client.get(WORKERS).json()['data']}
+        self.assertEqual(workers[ANA]['categories'], ['plomeria'])
+        self.assertEqual(workers[ANA]['verificationStatus']['status'], 'approved')
+        self.assertEqual(workers[BETO]['verificationStatus']['status'], 'documents_submitted')
+        # Sin oficios ni verificación: lista vacía y null
+        self.assertEqual((workers[CARO]['categories'], workers[CARO]['verificationStatus']), ([], None))
+
     def test_statistics(self):
         data = self.client.get(f'{WORKERS}statistics/').json()['data']
         self.assertEqual((data['total'], data['available'], data['online']), (3, 2, 1))

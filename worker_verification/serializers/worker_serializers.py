@@ -1,5 +1,8 @@
-from rest_framework import serializers
 import re
+
+from rest_framework import serializers
+
+from pricing.services.worker_categories import as_list
 
 
 class WorkerCreateSerializer(serializers.Serializer):
@@ -73,9 +76,20 @@ class WorkerSerializer(serializers.Serializer):
     # Cuenta habilitada (HU-32); sin el campo cuenta como activa. Solo lectura:
     # se cambia con PATCH /api/admin/accounts/{uid}/status/
     isActive = serializers.SerializerMethodField()
+    # Para la tabla del panel: oficios del catálogo (D16) y estado de verificación.
+    # Solo lectura: los cambian la app y las rutas de verificación
+    categories = serializers.SerializerMethodField()
+    verificationStatus = serializers.SerializerMethodField()
 
     def get_isActive(self, worker):
         return worker.get('isActive') is not False
+
+    def get_categories(self, worker):
+        return [slug for slug in as_list(worker.get('categories')) if isinstance(slug, str)]
+
+    def get_verificationStatus(self, worker):
+        status = worker.get('verificationStatus')
+        return status if isinstance(status, dict) else None
 
     def validate_rating(self, value):
         """Valida que el rating esté entre 0 y 5"""

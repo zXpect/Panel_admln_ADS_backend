@@ -19,7 +19,17 @@ from django.http import JsonResponse
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from payments.views.reminder_views import RemindersRunView
+
+
+class PanelLoginView(TokenObtainPairView):
+    """Login del panel con límite de intentos por IP (10 por minuto)."""
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel_login'
+
 
 def health(request):
     """Chequeo de salud de Render: sin autenticación ni acceso a datos."""
@@ -32,7 +42,7 @@ urlpatterns = [
     path('api/health/', health, name='health'),
     
     # JWT Authentication
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/token/', PanelLoginView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     
     # Pricing App (catálogo y estimado; antes de payments.request_urls)
@@ -40,6 +50,9 @@ urlpatterns = [
 
     # Payments App
     path('api/payments/', include('payments.urls')),
+
+    # Recordatorios (HU-17): los dispara un programador externo con REMINDERS_TOKEN
+    path('api/internal/reminders/', RemindersRunView.as_view(), name='reminders-run'),
 
     # PQR App
     path('api/pqr/', include('pqr.urls')),

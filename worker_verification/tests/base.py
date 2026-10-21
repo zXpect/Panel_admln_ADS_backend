@@ -2,6 +2,7 @@ import time
 from unittest import mock
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -84,6 +85,7 @@ class PanelTestCase(TestCase):
     """Panel autenticado con un JWT real y Firebase en memoria compartido por los servicios."""
 
     def setUp(self):
+        cache.clear()  # contadores de throttling
         self.admin = User.objects.create_user('revisora', password='x')
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(self.admin).access_token}')

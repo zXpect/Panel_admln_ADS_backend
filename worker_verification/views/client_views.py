@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from ..services.client_service import client_service
 from ..serializers import ClientSerializer, ClientListSerializer
 import logging
@@ -14,6 +15,8 @@ class ClientViewSet(viewsets.ViewSet):
     ViewSet para operaciones con clientes
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def list(self, request):
         """

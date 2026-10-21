@@ -814,6 +814,14 @@ con `PAGOS_MODO=mock`.
 5. Crear el usuario del panel: **Shell** del servicio → `python manage.py createsuperuser`.
 6. En el panel de Wompi Sandbox, URL de eventos: `https://<host>/api/payments/webhook/`.
 7. Pasar la URL pública a la app (`ADS_API_BASE_URL_RELEASE`) y al panel.
+8. Recordatorios (HU-17): Render gratuito no tiene tareas programadas, así que
+   los dispara GitHub Actions cada 30 minutos (`.github/workflows/reminders.yml`).
+   Copiar el valor de `REMINDERS_TOKEN` (Render lo genera; **Environment** de
+   `ads-api`) y crear en GitHub → **Settings → Secrets and variables → Actions**
+   los secretos `REMINDERS_TOKEN` (ese valor) y `ADS_API_URL`
+   (`https://<host>`). GitHub solo corre los workflows programados desde la rama
+   por defecto (`main`). Para probarlo a mano: **Actions → Recordatorios → Run
+   workflow**, o `python manage.py send_reminders` desde la Shell del servicio.
 
 La base gratuita vence a los 30 días: antes, cambiarla al plan pago más
 pequeño (D23). El plan gratuito del servicio se duerme sin tráfico; la primera

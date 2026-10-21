@@ -57,3 +57,7 @@ services:
         sync: false
       - key: WOMPI_INTEGRITY_SECRET
         sync: false
+      # Recordatorios (HU-17): el mismo valor va en el secreto REMINDERS_TOKEN de
+      # GitHub Actions (.github/workflows/reminders.yml)
+      - key: REMINDERS_TOKEN
+        generateValue: true

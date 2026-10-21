@@ -70,6 +70,12 @@ class WorkerSerializer(serializers.Serializer):
     pricePerHour = serializers.FloatField(required=False, default=0.0)
     experience = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     timestamp = serializers.IntegerField(required=False, allow_null=True)
+    # Cuenta habilitada (HU-32); sin el campo cuenta como activa. Solo lectura:
+    # se cambia con PATCH /api/admin/accounts/{uid}/status/
+    isActive = serializers.SerializerMethodField()
+
+    def get_isActive(self, worker):
+        return worker.get('isActive') is not False
 
     def validate_rating(self, value):
         """Valida que el rating esté entre 0 y 5"""

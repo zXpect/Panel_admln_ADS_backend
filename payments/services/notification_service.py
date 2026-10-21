@@ -149,6 +149,47 @@ class NotificationService:
             return False
         return self.deliver(recipient, data)
 
+    def notify_reminder(self, kind, request_id, request):
+        """
+        Recordatorios de ReminderService (HU-17). kind:
+        - service: servicio agendado próximo, a las dos partes (service_reminder)
+        - quote: cotización sin responder, al cliente (quote_pending)
+        - payment: servicio terminado sin pago; en efectivo se le recuerda al
+          trabajador que lo registre, si no, al cliente que pague (payment_pending)
+        """
+        client_id = request.get('client_id')
+        worker_id = request.get('worker_id')
+        worker_name = request.get('worker_name') or 'El trabajador'
+        base = {'requestId': request_id}
+
+        if kind == 'service':
+            hour = format_schedule(request.get('scheduled_at'))
+            delivered = self.deliver(client_id, {
+                **base, 'type': 'service_reminder', 'title': 'Tu servicio es pronto',
+                'body': f"{worker_name} llega el {hour}"}) if client_id else False
+            if worker_id:
+                delivered = self.deliver(worker_id, {
+                    **base, 'type': 'service_reminder', 'title': 'Tienes un servicio pronto',
+                    'body': f"Servicio en {request.get('address', '')} el {hour}"}) or delivered
+            return delivered
+
+        if kind == 'quote':
+            return bool(client_id) and self.deliver(client_id, {
+                **base, 'type': 'quote_pending', 'title': 'Tienes una cotización sin responder',
+                'body': f"{worker_name} cotizó tu servicio en {format_cop(request.get('quoted_price', 0))}. "
+                        'Acéptala o recházala'})
+
+        if kind == 'payment':
+            if request.get('payment_method') == 'cash':
+                return bool(worker_id) and self.deliver(worker_id, {
+                    **base, 'type': 'payment_pending', 'title': 'Registra el pago en efectivo',
+                    'body': 'Si ya recibiste el pago del servicio, márcalo como recibido'})
+            return bool(client_id) and self.deliver(client_id, {
+                **base, 'type': 'payment_pending', 'title': 'Tienes un pago pendiente',
+                'body': f"Paga {format_cop(request.get('quoted_price', 0))} del servicio terminado y califícalo"})
+
+        return False
+
     def notify_pqr_answered(self, pqr):
         """Avisa al autor que su PQR recibió respuesta (B11). Al tocarla, la app abre la solicitud."""
         type_name = dict(pqr.TYPES).get(pqr.type, 'PQR').lower()

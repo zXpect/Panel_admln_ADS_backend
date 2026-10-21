@@ -18,6 +18,9 @@ class AccountService:
     perfil, los datos de sesión y los archivos, cancela las solicitudes que no
     han iniciado y anonimiza los datos de contacto de las anteriores, que la
     otra parte conserva. Los Payment y las PQR guardan solo el uid.
+
+    También suspende y reactiva cuentas desde el panel (RF-21, HU-32): una
+    cuenta suspendida no puede iniciar sesión.
     """
 
     # Con el servicio en curso no se elimina la cuenta: la otra parte depende de él
@@ -32,6 +35,8 @@ class AccountService:
     }
 
     PROFILE_PATHS = ('User/Clientes/{uid}', 'User/Trabajadores/{uid}')
+    PROFILE_ROLES = (('client', 'User/Clientes/{uid}'), ('worker', 'User/Trabajadores/{uid}'))
+    SUSPENDED_REASON = 'Cuenta suspendida'
     SESSION_PATHS = ('Tokens/{uid}', 'active_workers/{uid}', 'WorkerDocuments/{uid}', 'notifications/{uid}')
     STORAGE_PREFIXES = ('worker_documents/{uid}/', 'client_images/{uid}/', 'worker_profiles/profile_{uid}_')
 
@@ -48,28 +53,96 @@ class AccountService:
                       if isinstance(request, dict)]
         return found
 
+    def _has_active_service(self, requests):
+        return any(request.get('status') in self.ACTIVE_STATUSES for _, _, request in requests)
+
+    def _close_requests(self, requests, reason_text, anonymize):
+        """
+        Cancela las solicitudes que no han iniciado, con aviso a la otra parte, y
+        con anonymize borra los datos de contacto del usuario en todas.
+        """
+        now = int(time.time() * 1000)
+        for role, request_id, request in requests:
+            cancelled = request.get('status') in self.CANCELLABLE_STATUSES
+            if not (cancelled or anonymize):
+                continue
+            updates = {'last_updated': now}
+            if anonymize:
+                updates.update(self.ROLES[role][1])
+            if cancelled:
+                updates.update(status='cancelled', cancelled_by=role, cancellation_reason_code='otro',
+                               cancellation_reason_text=reason_text, cancelled_at=now)
+            self.firebase.update_data(f"requests/{request_id}", updates)
+            if cancelled:
+                # Se avisa a la otra parte (con el nombre ya anonimizado si aplica)
+                self.notifications.notify('request_cancelled', request_id, {**request, **updates})
+
+    def find_profile(self, uid):
+        """(rol, ruta, perfil) del usuario en User/Clientes o User/Trabajadores, o (None, None, None)."""
+        for role, template in self.PROFILE_ROLES:
+            path = template.format(uid=uid)
+            profile = self.firebase.get_data(path)
+            if isinstance(profile, dict):
+                return role, path, profile
+        return None, None, None
+
+    def set_active(self, uid, active):
+        """
+        Suspende (active=False) o reactiva una cuenta. Al suspender: deshabilita
+        el usuario en Firebase Auth (no puede iniciar sesión), revoca sus
+        sesiones (la API las rechaza con check_revoked), marca isActive=false, saca
+        al trabajador de la búsqueda y cancela sus solicitudes que no han iniciado.
+        Al reactivar solo habilita la cuenta; el trabajador vuelve a conectarse él mismo.
+
+        Returns:
+            tuple: (rol, estaba_activa)
+
+        Raises:
+            ServiceRequestError: 404 si no existe; 409 si tiene un servicio en camino o en progreso
+        """
+        role, path, profile = self.find_profile(uid)
+        if role is None:
+            raise ServiceRequestError('Cuenta no encontrada', 404)
+        was_active = profile.get('isActive') is not False
+
+        requests = []
+        if not active:
+            requests = self._requests_of(uid)
+            if self._has_active_service(requests):
+                raise ServiceRequestError(
+                    'La cuenta tiene un servicio en camino o en progreso; suspéndela cuando termine', 409)
+
+        # Primero Firebase Auth, para que no pueda actuar mientras se cierra lo demás.
+        # Si algo falla después, repetir la petición completa el cambio.
+        try:
+            firebase_auth.update_user(uid, disabled=not active)
+            if not active:
+                firebase_auth.revoke_refresh_tokens(uid)
+        except firebase_auth.UserNotFoundError:
+            logger.warning(f"Account {uid} has a profile but no Firebase Auth user")
+
+        updates = {'isActive': active}
+        if role == 'worker' and not active:
+            updates.update(isAvailable=False, isOnline=False)
+            self.firebase.delete_data(f"active_workers/{uid}")
+        self.firebase.update_data(path, updates)
+
+        if not active:
+            self._close_requests(requests, self.SUSPENDED_REASON, anonymize=False)
+        logger.info(f"Account {uid} ({role}) {'reactivated' if active else 'suspended'}")
+        return role, was_active
+
     def delete_account(self, uid):
         """
         Raises:
             ServiceRequestError: 409 si tiene un servicio en camino o en progreso
         """
         requests = self._requests_of(uid)
-        if any(request.get('status') in self.ACTIVE_STATUSES for _, _, request in requests):
+        if self._has_active_service(requests):
             raise ServiceRequestError(
                 'Tienes un servicio en curso; termínalo antes de eliminar tu cuenta', 409)
 
-        now = int(time.time() * 1000)
-        for role, request_id, request in requests:
-            _, contact_fields = self.ROLES[role]
-            updates = dict(contact_fields, last_updated=now)
-            cancelled = request.get('status') in self.CANCELLABLE_STATUSES
-            if cancelled:
-                updates.update(status='cancelled', cancelled_by=role, cancellation_reason_code='otro',
-                               cancellation_reason_text='Cuenta eliminada', cancelled_at=now)
-            self.firebase.update_data(f"requests/{request_id}", updates)
-            if cancelled:
-                # Se avisa a la otra parte, con el nombre ya anonimizado
-                self.notifications.notify('request_cancelled', request_id, {**request, **updates})
+        self._close_requests(requests, 'Cuenta eliminada', anonymize=True)
 
         for template in self.PROFILE_PATHS + self.SESSION_PATHS:
             self.firebase.delete_data(template.format(uid=uid))

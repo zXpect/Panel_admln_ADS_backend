@@ -121,6 +121,7 @@ test('final: catálogo, agenda y cancelación solo los escribe el backend', { sk
     { cancelled_by: 'client' }, { cancellation_reason_code: 'precio' }, { cancellation_reason_text: 'x' },
     { cancelled_at: 1 }, { requote: { price: 1 } }, { search_started_at: 1 }, { worker_selected_at: 1 },
     { payment_method: 'cash' }, { cash_received_at: 1 },
+    { reminder_service_at: 1 }, { reminder_quote_at: 1 }, { reminder_payment_at: 1 },
   ];
   for (const uid of [CLIENT, WORKER]) {
     for (const values of writes) {
@@ -248,6 +249,15 @@ test('«Mis datos»: el dueño edita nombre, apellido y teléfono', async () => 
   await assertSucceeds(update(ref(db(CLIENT), `User/Clientes/${CLIENT}`), { name: 'Carla', lastName: 'Ruiz', phone: '3001234567' }));
   await assertSucceeds(update(ref(db(WORKER), `User/Trabajadores/${WORKER}`), { name: 'Will', lastName: 'Paz', phone: '3007654321' }));
   await assertFails(update(ref(db(WORKER), `User/Clientes/${CLIENT}`), { phone: '1' }));
+});
+
+test('isActive del cliente solo lo cambia el panel (suspender cuenta)', async () => {
+  const client = ref(db(CLIENT), `User/Clientes/${CLIENT}`);
+  await assertFails(update(client, { isActive: false }));
+  await admin((d) => update(ref(d, `User/Clientes/${CLIENT}`), { isActive: false }));
+  await assertFails(update(client, { isActive: true }));
+  await assertFails(set(client, { name: 'C', email: 'c@x.co' }));
+  await assertSucceeds(update(client, { name: 'Carla' }));
 });
 
 test('final: consentimiento con forma completa, sin borrarse ni retroceder', { skip: STAGE1 }, async () => {

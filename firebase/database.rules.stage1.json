@@ -6,7 +6,7 @@
       "Clientes": {
         "$uid": {
           ".read": "(auth != null && auth.uid == $uid)",
-          ".write": "((auth != null && auth.uid == $uid) && newData.exists())"
+          ".write": "((auth != null && auth.uid == $uid) && newData.exists() && newData.child('isActive').val() == data.child('isActive').val())"
         }
       },
       "Trabajadores": {
@@ -92,7 +92,8 @@
     "requests": {
       ".indexOn": [
         "client_id",
-        "worker_id"
+        "worker_id",
+        "status"
       ],
       ".read": "(auth != null && (query.orderByChild == 'client_id' || query.orderByChild == 'worker_id') && query.equalTo == auth.uid)",
       "$requestId": {

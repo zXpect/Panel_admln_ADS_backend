@@ -145,6 +145,10 @@ REST_FRAMEWORK = {
         'notifications': '60/min',
         'pqr': '20/min',
         'account': '5/min',
+        'reminders': '10/min',
+        # Panel admin: login por IP (fuerza bruta) y el resto por usuario
+        'panel_login': '10/min',
+        'panel': '300/min',
     },
 }
 
@@ -210,6 +214,11 @@ FIREBASE_CONFIG = {
     'DATABASE_URL': config('FIREBASE_DATABASE_URL', default=''),
     'STORAGE_BUCKET': config('FIREBASE_STORAGE_BUCKET', default=''),
 }
+
+# ==================== RECORDATORIOS (HU-17) ====================
+# Secreto que comparte el programador externo (GitHub Actions) para llamar
+# POST /api/internal/reminders/. Vacío: la ruta responde 404.
+REMINDERS_TOKEN = config('REMINDERS_TOKEN', default='')
 
 # ==================== PAYMENTS SETTINGS ====================
 DJANGO_ENV = config('DJANGO_ENV', default='development')

@@ -81,12 +81,14 @@ class ConfigAuditLog(models.Model):
     """
     Registro de cada cambio de oficio, tarea o parámetro de SystemConfig hecho
     por un administrador (I10). En el Sprint 4 los cambios se hacen desde el
-    admin de Django; en el Sprint 5, desde el panel (B10).
+    admin de Django; en el Sprint 5, desde el panel (B10). También registra la
+    suspensión y reactivación de cuentas (Account, HU-32; entity_key = uid).
     """
     ENTITY_CHOICES = [
         ('SystemConfig', 'Parámetro'),
         ('ServiceCategory', 'Oficio'),
         ('Task', 'Tarea'),
+        ('Account', 'Cuenta'),
     ]
 
     admin = models.ForeignKey(User, on_delete=models.PROTECT, verbose_name='Administrador')

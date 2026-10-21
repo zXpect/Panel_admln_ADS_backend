@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -14,6 +15,7 @@ class AdminApiTestCase(TestCase):
     """Catálogo y parámetros desde el panel con auditoría (B10, I10)."""
 
     def setUp(self):
+        cache.clear()  # contadores de throttling
         self.admin = User.objects.create_user('admin.ads', password='x', is_staff=True)
         self.client = APIClient()
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.admin)}")

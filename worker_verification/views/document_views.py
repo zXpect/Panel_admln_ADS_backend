@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from ..services.document_service import document_service
 from ..serializers import (
     DocumentSerializer,
@@ -20,6 +21,8 @@ class DocumentViewSet(viewsets.ViewSet):
     ViewSet para operaciones con documentos de trabajadores
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     @action(detail=False, methods=['get'])
     def pending(self, request):

@@ -59,10 +59,14 @@ SPRINT4_PROTECTED_REQUEST_FIELDS = [
     'worker_selected_at',
 ]
 
-# Sprint 5 (solo reglas finales): método de pago y efectivo (D10) los escribe el backend
+# Sprint 5 (solo reglas finales): método de pago y efectivo (D10) y marcas de los
+# recordatorios (HU-17) los escribe el backend
 SPRINT5_PROTECTED_REQUEST_FIELDS = [
     'payment_method',
     'cash_received_at',
+    'reminder_service_at',
+    'reminder_quote_at',
+    'reminder_payment_at',
 ]
 
 # En las reglas .val() solo devuelve valores primitivos: los campos que son objetos
@@ -178,7 +182,8 @@ def build_requests(stage1):
     write = OR(create, update) if stage1 else update
 
     return {
-        ".indexOn": ["client_id", "worker_id"],
+        # status: los recordatorios (HU-17) consultan las solicitudes por estado
+        ".indexOn": ["client_id", "worker_id", "status"],
         # Las listas solo se leen con consulta filtrada por el propio uid
         ".read": AND(AUTH,
                      OR("query.orderByChild == 'client_id'", "query.orderByChild == 'worker_id'"),
@@ -278,7 +283,9 @@ def build(stage1=False):
                 "Clientes": {
                     "$uid": {
                         ".read": owner_only,
-                        ".write": AND(owner_only, "newData.exists()", *(() if stage1 else (consent_rule(),))),
+                        # isActive lo cambia solo el panel (HU-32)
+                        ".write": AND(owner_only, "newData.exists()", unchanged('isActive'),
+                                      *(() if stage1 else (consent_rule(),))),
                     }
                 },
                 "Trabajadores": build_workers(stage1),

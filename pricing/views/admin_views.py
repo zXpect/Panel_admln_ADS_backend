@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
@@ -21,9 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 class PanelView(APIView):
-    """Base de las rutas del panel (B10): solo JWT del panel; el token de la app recibe 403."""
+    """Base de las rutas del panel (B10): solo JWT del panel; el token de la app recibe 401/403."""
     authentication_classes = [JWTAuthentication, SessionAuthentication]
     permission_classes = [IsPanelUser]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
 
     def save_audited(self, serializer, old_instance):
         """Guarda el cambio y su registro de ConfigAuditLog en la misma transacción (I10)."""
@@ -122,7 +125,8 @@ class AdminConfigDetailView(PanelView):
 class AdminAuditLogView(PanelView):
     """
     GET /api/admin/audit/?entity=Task
-    Historial de cambios de oficios, tareas y parámetros (I10), del más reciente al más antiguo.
+    Historial de cambios de oficios, tareas, parámetros (I10) y cuentas
+    (entity=Account), del más reciente al más antiguo.
     """
 
     def get(self, request):

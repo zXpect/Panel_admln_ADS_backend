@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from django.db import transaction
 from ..services.worker_service import worker_service
 from ..services.audit_service import audit_service
@@ -37,6 +38,8 @@ class WorkerViewSet(viewsets.ViewSet):
     ViewSet para operaciones con trabajadores
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def list(self, request):
         """

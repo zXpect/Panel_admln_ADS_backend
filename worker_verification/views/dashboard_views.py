@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from ..services.worker_service import worker_service
 from ..services.client_service import client_service
 from ..services.document_service import document_service
@@ -16,6 +17,8 @@ class DashboardStatsView(APIView):
     Vista para obtener estadísticas generales del dashboard
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def get(self, request):
         """
@@ -102,6 +105,8 @@ class DashboardWeeklyTrendsView(APIView):
     Vista para obtener tendencias semanales mejoradas
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def get(self, request):
         """
@@ -158,6 +163,8 @@ class DashboardMonthlyTrendsView(APIView):
     Vista para obtener tendencias mensuales mejoradas
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def get(self, request):
         """
@@ -213,6 +220,8 @@ class DashboardActivityStatsView(APIView):
     Vista para obtener estadísticas detalladas de actividad
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def get(self, request):
         """

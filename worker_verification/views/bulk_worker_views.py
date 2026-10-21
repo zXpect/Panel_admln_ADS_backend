@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.http import HttpResponse
 from ..services.bulk_worker_service import bulk_worker_service
@@ -19,6 +20,8 @@ class BulkWorkerUploadView(APIView):
     POST /api/workers/bulk-upload/
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     parser_classes = [MultiPartParser, FormParser]
     
     def post(self, request):
@@ -100,6 +103,8 @@ class BulkWorkerTemplateView(APIView):
     GET /api/workers/bulk-upload-template/
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def get(self, request):
         """

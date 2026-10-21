@@ -1,4 +1,54 @@
 from rest_framework import serializers
+import re
+
+
+class WorkerCreateSerializer(serializers.Serializer):
+    """
+    Serializer específico para creación de trabajadores individuales
+    El ID se genera automáticamente en el backend desde Firebase Auth
+    """
+    name = serializers.CharField(max_length=100, required=True)
+    lastName = serializers.CharField(max_length=100, required=True)
+    email = serializers.EmailField(required=True)
+    work = serializers.CharField(max_length=100, required=True)
+    phone = serializers.CharField(max_length=20, required=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    latitude = serializers.FloatField(required=False, default=0.0)
+    longitude = serializers.FloatField(required=False, default=0.0)
+    pricePerHour = serializers.FloatField(required=False, default=0.0)
+    experience = serializers.CharField(required=False, allow_blank=True)
+    password = serializers.CharField(required=False, min_length=6, allow_blank=True)
+
+    def validate_email(self, value):
+        """Valida y normaliza el email"""
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', value):
+            raise serializers.ValidationError("Formato de email inválido")
+        return value.lower().strip()
+
+    def validate_phone(self, value):
+        """Valida que el teléfono tenga formato correcto"""
+        phone = re.sub(r'\D', '', value)
+        if len(phone) < 7 or len(phone) > 15:
+            raise serializers.ValidationError("Número de teléfono inválido (debe tener entre 7 y 15 dígitos)")
+        return phone
+
+    def validate_pricePerHour(self, value):
+        """Valida que el precio sea positivo"""
+        if value < 0:
+            raise serializers.ValidationError("El precio debe ser positivo")
+        return value
+
+    def validate_latitude(self, value):
+        """Valida que la latitud esté en rango válido"""
+        if value < -90 or value > 90:
+            raise serializers.ValidationError("Latitud debe estar entre -90 y 90")
+        return value
+
+    def validate_longitude(self, value):
+        """Valida que la longitud esté en rango válido"""
+        if value < -180 or value > 180:
+            raise serializers.ValidationError("Longitud debe estar entre -180 y 180")
+        return value
 
 
 class WorkerSerializer(serializers.Serializer):
@@ -20,6 +70,12 @@ class WorkerSerializer(serializers.Serializer):
     pricePerHour = serializers.FloatField(required=False, default=0.0)
     experience = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     timestamp = serializers.IntegerField(required=False, allow_null=True)
+    # Cuenta habilitada (HU-32); sin el campo cuenta como activa. Solo lectura:
+    # se cambia con PATCH /api/admin/accounts/{uid}/status/
+    isActive = serializers.SerializerMethodField()
+
+    def get_isActive(self, worker):
+        return worker.get('isActive') is not False
 
     def validate_rating(self, value):
         """Valida que el rating esté entre 0 y 5"""

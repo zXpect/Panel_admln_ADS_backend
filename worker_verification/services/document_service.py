@@ -1,4 +1,6 @@
+from django.db import transaction
 from .firebase_service import firebase_service
+from .audit_service import audit_service
 import logging
 from datetime import datetime
 
@@ -230,16 +232,16 @@ class DocumentService:
             logger.error(f"Error updating document status: {str(e)}")
             raise
     
-    def approve_document(self, worker_id, category, subcategory, document_id, reviewer_id):
+    def approve_document(self, worker_id, category, subcategory, document_id, reviewer):
         """
-        Aprueba un documento
+        Aprueba un documento y registra la decisión en VerificationLog
         
         Args:
             worker_id (str): ID del trabajador
             category (str): Categoría del documento
             subcategory (str): Subcategoría (puede ser None)
             document_id (str): ID del documento
-            reviewer_id (str): ID del revisor
+            reviewer (User): Administrador autenticado que toma la decisión
             
         Returns:
             bool: True si fue exitoso
@@ -248,34 +250,35 @@ class DocumentService:
             update_data = {
                 'status': self.STATUS_APPROVED,
                 'reviewedAt': int(datetime.now().timestamp() * 1000),
-                'reviewedBy': reviewer_id,
+                'reviewedBy': audit_service.reviewer_label(reviewer),
                 'rejectionReason': None
             }
             
-            # Construir ruta
-            if subcategory:
-                path = f"{self.DOCUMENTS_PATH}/{worker_id}/{category}/{subcategory}/{document_id}"
-            else:
-                path = f"{self.DOCUMENTS_PATH}/{worker_id}/{category}"
+            path = self._document_path(worker_id, category, subcategory, document_id)
             
-            self.firebase.update_data(path, update_data)
+            # Si Firebase falla, el log se revierte: no queda una decisión registrada que no ocurrió
+            with transaction.atomic():
+                audit_service.log_document_decision(
+                    reviewer, worker_id, category, subcategory, self.STATUS_APPROVED
+                )
+                self.firebase.update_data(path, update_data)
             
-            logger.info(f"Document approved for worker {worker_id} by {reviewer_id}")
+            logger.info(f"Document approved for worker {worker_id} by user {reviewer.pk}")
             return True
         except Exception as e:
             logger.error(f"Error approving document: {str(e)}")
             raise
     
-    def reject_document(self, worker_id, category, subcategory, document_id, reviewer_id, reason):
+    def reject_document(self, worker_id, category, subcategory, document_id, reviewer, reason):
         """
-        Rechaza un documento
+        Rechaza un documento y registra la decisión en VerificationLog
         
         Args:
             worker_id (str): ID del trabajador
             category (str): Categoría del documento
             subcategory (str): Subcategoría (puede ser None)
             document_id (str): ID del documento
-            reviewer_id (str): ID del revisor
+            reviewer (User): Administrador autenticado que toma la decisión
             reason (str): Razón del rechazo
             
         Returns:
@@ -285,23 +288,29 @@ class DocumentService:
             update_data = {
                 'status': self.STATUS_REJECTED,
                 'reviewedAt': int(datetime.now().timestamp() * 1000),
-                'reviewedBy': reviewer_id,
+                'reviewedBy': audit_service.reviewer_label(reviewer),
                 'rejectionReason': reason
             }
             
-            # Construir ruta
-            if subcategory:
-                path = f"{self.DOCUMENTS_PATH}/{worker_id}/{category}/{subcategory}/{document_id}"
-            else:
-                path = f"{self.DOCUMENTS_PATH}/{worker_id}/{category}"
+            path = self._document_path(worker_id, category, subcategory, document_id)
             
-            self.firebase.update_data(path, update_data)
+            with transaction.atomic():
+                audit_service.log_document_decision(
+                    reviewer, worker_id, category, subcategory, self.STATUS_REJECTED, reason
+                )
+                self.firebase.update_data(path, update_data)
             
-            logger.info(f"Document rejected for worker {worker_id} by {reviewer_id}")
+            logger.info(f"Document rejected for worker {worker_id} by user {reviewer.pk}")
             return True
         except Exception as e:
             logger.error(f"Error rejecting document: {str(e)}")
             raise
+    
+    def _document_path(self, worker_id, category, subcategory, document_id):
+        """Ruta del documento en WorkerDocuments (los obligatorios no tienen subcategoría ni id)"""
+        if subcategory:
+            return f"{self.DOCUMENTS_PATH}/{worker_id}/{category}/{subcategory}/{document_id}"
+        return f"{self.DOCUMENTS_PATH}/{worker_id}/{category}"
     
     def get_pending_documents(self):
         """
@@ -588,12 +597,12 @@ class DocumentService:
             # Verificar mínimo de cartas (3)
             result['hasMinimumCartas'] = result['cartasCount'] >= 3
         
-            # Verificar si está completo 
+            # Completo: hoja de vida y antecedentes, más un título o al menos tres cartas
+            # (misma regla que DocumentRequirementCheckSerializer y el README)
             result['isComplete'] = (
-                result['hasHojaVida'] and 
-                result['hasAntecedentes'] and 
-                result['hasTitulo'] and
-                result['hasMinimumCartas']
+                result['hasHojaVida'] and
+                result['hasAntecedentes'] and
+                (result['hasTitulo'] or result['hasMinimumCartas'])
             )
         
             logger.info(f"Document verification for worker {worker_id}: {result}")

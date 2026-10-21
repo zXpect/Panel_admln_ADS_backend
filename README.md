@@ -16,6 +16,7 @@ Panel de administración para gestión y verificación de trabajadores, document
 - [Servicios](#servicios)
 - [Seguridad](#seguridad)
 - [Logging](#logging)
+- [Despliegue en Render](#despliegue-en-render)
 - [Contribuir](#contribuir)
 
 ## Características
@@ -37,11 +38,11 @@ Panel de administración para gestión y verificación de trabajadores, document
 - **Almacenamiento**: Firebase Storage
 - **Autenticación**: JWT (Simple JWT)
 - **Base de Datos Local**: SQLite (para usuarios de Django)
-- **Lenguaje**: Python 3.x
+- **Lenguaje**: Python 3.11
 
 ## Requisitos Previos
 
-- Python 3.8 o superior
+- Python 3.11 (con 3.13 o 3.14 falla la instalación: `Pillow==10.2.0` y `pandas==2.2.0` no tienen paquetes para esas versiones)
 - pip (gestor de paquetes de Python)
 - Cuenta de Firebase con proyecto configurado
 - Credenciales de Firebase (archivo JSON)
@@ -51,14 +52,15 @@ Panel de administración para gestión y verificación de trabajadores, document
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repositorio>
-cd admin_panel
+git clone -b develop https://github.com/zXpect/Panel_admln_ADS_backend.git
+cd Panel_admln_ADS_backend
 ```
 
 ### 2. Crear entorno virtual
 
 ```bash
 python -m venv venv
+# En Windows con varias versiones instaladas: py -3.11 -m venv venv
 
 # En Windows
 venv\Scripts\activate
@@ -100,22 +102,14 @@ python manage.py createsuperuser
 
 ### 1. Variables de Entorno
 
-Crear un archivo `.env` en la raíz del proyecto:
+Copiar la plantilla y llenar los valores (todas las claves están comentadas en
+`.env.example`; las del módulo de pagos, en `.env.payments.example`):
 
-```env
-# Django
-SECRET_KEY=tu-secret-key-super-segura
-DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1
-
-# CORS
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-
-# Firebase
-FIREBASE_CREDENTIALS_PATH=firebase-credentials.json
-FIREBASE_DATABASE_URL=https://tu-proyecto.firebaseio.com
-FIREBASE_STORAGE_BUCKET=tu-proyecto.appspot.com
+```bash
+cp .env.example .env
 ```
+
+No subir nunca el `.env` ni la llave de Firebase: ambos están en `.gitignore`.
 
 ### 2. Configuración de Firebase
 
@@ -124,7 +118,7 @@ FIREBASE_STORAGE_BUCKET=tu-proyecto.appspot.com
 3. Ir a Configuración del proyecto > Cuentas de servicio
 4. Generar nueva clave privada
 5. Descargar el archivo JSON
-6. Guardar como `firebase-credentials.json` en la raíz del proyecto
+6. Guardar como `serviceAccountKey.json` en `backend/` (o cambiar `FIREBASE_CREDENTIALS_PATH`)
 
 ### 3. Estructura de Firebase Database
 
@@ -572,6 +566,85 @@ Response:
 }
 ```
 
+### Pagos, cotización y API de la app móvil
+
+App `payments/`. Los endpoints de la app móvil se autentican con el **ID token
+de Firebase** (`Authorization: Bearer <idToken>`, RS256); los del panel, con el
+JWT de `/api/auth/token/`. Todos tienen límite de peticiones (`429` al excederlo).
+La pasarela se elige con `PAGOS_MODO` (`mock` | `wompi`); ver `.env.payments.example`.
+
+Flujo: el trabajador cotiza → el cliente acepta y elige el método de pago
+(`digital` o `cash`) → el servicio avanza hasta `completed` → el cliente paga
+en Wompi, o el trabajador registra el efectivo → el cliente califica.
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `GET` | `/api/requests/quote-limits/?service_type=X` | App | Rango de precio permitido (COP) |
+| `POST` | `/api/requests/{id}/quote/` | App (trabajador) | `{"quoted_price": 85000}` en COP enteros. Si la solicitud estaba `pending`, pasa a `accepted` |
+| `POST` | `/api/requests/{id}/quote/accept/` | App (cliente) | `{"payment_method": "digital\|cash"}`. Acepta la cotización; queda inmutable |
+| `POST` | `/api/requests/{id}/requote/` | App (trabajador) | `{"price": 165000, "reason_code": "dificultad", "reason_text": ""}`. Una sola re-cotización por servicio, en `on_the_way` o `in_progress` (D7). Mientras esté pendiente, el trabajador no puede marcar `completed` |
+| `POST` | `/api/requests/{id}/requote/accept/` · `requote/reject/` | App (cliente) | Al aceptar, `quoted_price` pasa al nuevo precio; al rechazar, se conserva el original |
+| `POST` | `/api/requests/{id}/payment-method/` | App (cliente) | `{"payment_method": "digital\|cash"}`; cambia el método hasta que el servicio termina |
+| `POST` | `/api/requests/{id}/cash-received/` | App (trabajador) | «Recibí el pago»: crea un `Payment` con `gateway = cash` en `APPROVED`, deja `payment_status = approved` y avisa al cliente |
+| `POST` | `/api/requests/{id}/quote/reject/` | App (cliente) | `{"reason": "..."}`; el trabajador puede volver a cotizar |
+| `POST` | `/api/payments/` | App (cliente) | `{"service_request_id": "...", "redirect_url": "adsapp://..."}` → `reference`, `checkout_url`. El monto lo calcula el servidor (cotización aceptada); un pago abierto de menos de 30 min se reutiliza |
+| `GET` | `/api/payments/{reference}/` | App (cliente/trabajador) o panel | Estado del pago; el panel ve además el historial de eventos |
+| `GET` | `/api/payments/?status=&gateway=&service_request_id=&date_from=&date_to=` | Panel | Listado paginado con `summary` (pagos aprobados: cantidad y total en COP, en general y por pasarela) |
+| `GET` | `/api/admin/catalog/` | Panel | Oficios y tareas, incluidos los inactivos, con la referencia sin factor regional |
+| `PATCH` | `/api/admin/catalog/categories/{id}/` | Panel | `name`, `order`, `is_active` (el slug no cambia) |
+| `POST` · `PATCH` | `/api/admin/catalog/tasks/` · `tasks/{id}/` | Panel | Crear o editar tareas; no se borran, se desactivan |
+| `GET` · `PATCH` | `/api/admin/config/` · `config/{key}/` | Panel | Parámetros de cotización y búsqueda, con formato y rango validados |
+| `GET` | `/api/admin/audit/?entity=` | Panel | Historial de `ConfigAuditLog` (cada cambio del panel queda ahí con su administrador) |
+| `POST` | `/api/requests/{id}/rating/` | App (cliente) | `{"rating": 1-5, "comment": "..."}`; requiere el servicio pagado (digital o efectivo registrado). Recalcula el promedio del trabajador |
+| `POST` | `/api/notifications/` | App | `{"request_id": "...", "type": "new_request\|request_accepted\|request_rejected\|status_change"}`. FCM desde el backend; el servidor decide destinatario y texto |
+| `POST` | `/api/payments/webhook/` | Pasarela | Eventos de Wompi/mock; se autentica por checksum |
+| `GET/POST` | `/api/payments/mock-checkout/{reference}/` | Navegador | Checkout simulado (solo `PAGOS_MODO=mock`) |
+
+**PQR** (app `pqr/`, B11). `POST /api/pqr/` (app; solo el cliente o el
+trabajador de la solicitud, el rol lo pone el servidor), `GET /api/pqr/` (app:
+las propias; panel: todas, `?status=`), `GET /api/pqr/{id}/` y
+`PATCH /api/pqr/{id}/` (panel: `{"status": "en_tramite|cerrada", "response": "..."}`;
+cerrar exige respuesta y una PQR cerrada ya no cambia). El plazo `due_at` es de
+15 días hábiles en hora de Colombia, sin fines de semana ni festivos
+(`pqr/services/business_days.py`). Al responder se avisa al autor con el tipo
+`pqr_answered`, que también queda en `notifications/<uid>`.
+
+**Perfil del trabajador** (B12). `GET /api/workers/{id}/stats/` (app) →
+`completed_jobs` (solicitudes `completed`, calificadas o no), `rating` y
+`total_ratings`. No hay contador en Firebase: la app marca `completed`
+directamente, así que se cuenta al consultar.
+
+**Eliminar mi cuenta** (app `accounts/`, D18). `DELETE /api/me/` → `204`.
+Borra el perfil, `Tokens`, `active_workers`, `WorkerDocuments`,
+`notifications` y los archivos del usuario en Storage, cancela sus solicitudes
+`pending`/`accepted` (avisa a la otra parte), anonimiza el contacto en las
+demás y, al final, elimina la cuenta de Firebase Auth. Con un servicio
+`on_the_way`/`in_progress` responde `409`. `Payment` y `PQR` conservan solo el uid.
+
+Errores: `{"success": false, "error": "..."}` (o `"errors"` de validación) con
+`400` datos inválidos, `401` sin token válido, `403` no es el participante
+correcto, `404` no existe, `409` el estado de la solicitud no lo permite.
+
+Rangos de precio configurables en el admin de Django (`SystemConfig`):
+`quote_min_price_cop` (por defecto 1000), `quote_max_price_cop` (por defecto
+5000000) y `quote_price_ranges` (JSON por tipo de servicio, p. ej.
+`{"Plomería": {"min": 30000, "max": 800000}}`).
+
+En Firebase, `requests/{id}` gana los campos `quoted_price`, `quote_status`
+(`quoted`/`accepted`/`rejected`), `payment_status`
+(`pending`/`approved`/`declined`/`error`/`voided`) y `payment_reference`, que
+solo escribe el backend (ver `firebase/README.md`).
+
+Pruebas manuales del mock: `python manage.py mock_payment <request_id> <monto_cop>`.
+
+**Wompi (`PAGOS_MODO=wompi`).** `WompiGateway` arma la URL del Web Checkout
+(`https://checkout.wompi.co/p/`) con la firma de integridad, y verifica los
+eventos con `WOMPI_EVENTS_SECRET`, igual que el mock. Antes de cerrar un pago
+pendiente vencido consulta la transacción en Wompi con la llave privada
+(`GET /transactions?reference=`): si ya está aprobada la aplica (evento
+`local.reconciled`) y no deja abrir otro pago; si sigue en proceso, la reutiliza.
+En el panel de Wompi, la URL de eventos debe ser `https://<host>/api/payments/webhook/`.
+
 ## Estructura del Proyecto
 
 ```
@@ -719,6 +792,41 @@ INFO 2025-01-20 10:30:45 worker_service Retrieved 100 workers
 ERROR 2025-01-20 10:31:12 document_service Error approving document: File not found
 ```
 
+## Despliegue en Render
+
+Decisión D23: Render con PostgreSQL. `render.yaml` es un Blueprint con la API
+(gunicorn) y la base `ads-db`; la variable `DATABASE_URL` hace que Django use
+PostgreSQL (sin ella usa SQLite local). Con `DJANGO_ENV=production` se activan
+HTTPS obligatorio, cookies seguras, HSTS, estáticos con WhiteNoise y caché en
+la base para el throttling; el backend no arranca sin `SECRET_KEY` propia ni
+con `PAGOS_MODO=mock`.
+
+1. En Render: **New → Blueprint** y elegir este repositorio (rama `develop` o `main`).
+2. Llenar las variables marcadas `sync: false` (ver `.env.production.example`):
+   las dos de Firebase y las cuatro llaves Sandbox de Wompi. El dominio de
+   Render entra solo en `ALLOWED_HOSTS` y `CSRF_TRUSTED_ORIGINS`
+   (`RENDER_EXTERNAL_HOSTNAME`); `CORS_ALLOWED_ORIGINS` se agrega cuando el
+   panel React tenga URL.
+3. En el servicio `ads-api` → **Environment → Secret Files**, subir
+   `serviceAccountKey.json` (queda en `/etc/secrets/serviceAccountKey.json`).
+4. Desplegar. El build instala, ejecuta `collectstatic`, `migrate` y
+   `createcachetable`. Comprobar `https://<host>/api/health/` → `{"status": "ok"}`.
+5. Crear el usuario del panel: **Shell** del servicio → `python manage.py createsuperuser`.
+6. En el panel de Wompi Sandbox, URL de eventos: `https://<host>/api/payments/webhook/`.
+7. Pasar la URL pública a la app (`ADS_API_BASE_URL_RELEASE`) y al panel.
+8. Recordatorios (HU-17): Render gratuito no tiene tareas programadas, así que
+   los dispara GitHub Actions cada 30 minutos (`.github/workflows/reminders.yml`).
+   Copiar el valor de `REMINDERS_TOKEN` (Render lo genera; **Environment** de
+   `ads-api`) y crear en GitHub → **Settings → Secrets and variables → Actions**
+   los secretos `REMINDERS_TOKEN` (ese valor) y `ADS_API_URL`
+   (`https://<host>`). GitHub solo corre los workflows programados desde la rama
+   por defecto (`main`). Para probarlo a mano: **Actions → Recordatorios → Run
+   workflow**, o `python manage.py send_reminders` desde la Shell del servicio.
+
+La base gratuita vence a los 30 días: antes, cambiarla al plan pago más
+pequeño (D23). El plan gratuito del servicio se duerme sin tráfico; la primera
+petición después tarda unos segundos.
+
 ## Testing
 
 ```bash
@@ -773,9 +881,66 @@ Este proyecto es privado y confidencial.
 
 1. Fork el proyecto
 2. Crear rama de feature (`git checkout -b feature/AmazingFeature`)
-3. Commit cambios (`git commit -m 'Add some AmazingFeature'`)
+3. Commit cambios siguiendo la [convención de commits](#convención-de-commits)
 4. Push a la rama (`git push origin feature/AmazingFeature`)
 5. Abrir Pull Request
+
+### Convención de Commits
+
+Este proyecto sigue [Conventional Commits](https://www.conventionalcommits.org/es/). El mensaje debe tener el formato:
+
+```
+<tipo>(<scope>): <descripción corta>
+
+[cuerpo opcional]
+
+[footer opcional]
+```
+
+#### Tipos
+
+| Tipo       | Uso                                                                 |
+|------------|----------------------------------------------------------------------|
+| `feat`     | Nueva funcionalidad                                                  |
+| `fix`      | Corrección de un bug                                                 |
+| `refactor` | Cambio de código que no arregla un bug ni agrega funcionalidad       |
+| `perf`     | Cambio que mejora el rendimiento                                     |
+| `docs`     | Cambios solo de documentación (README, comentarios, etc.)            |
+| `style`    | Cambios de formato (espacios, comas, etc.) sin afectar la lógica     |
+| `test`     | Agregar o corregir tests                                             |
+| `build`    | Cambios en dependencias o sistema de build (`requirements.txt`, etc.)|
+| `ci`       | Cambios en configuración de integración continua                    |
+| `chore`    | Tareas de mantenimiento que no afectan `src` ni tests                |
+| `revert`   | Revierte un commit anterior                                          |
+
+#### Scopes usados en este proyecto
+
+Corresponden a los módulos de `worker_verification/`:
+
+- `workers` — trabajadores
+- `documents` — documentos y verificación
+- `clients` — clientes
+- `dashboard` — estadísticas y dashboard
+- `auth` — autenticación/JWT
+- `settings` — configuración del proyecto (`admin_panel/settings.py`, `urls.py`)
+- `firebase` — integración con Firebase (Realtime Database / Storage)
+
+#### Reglas
+
+- Descripción corta en modo imperativo, sin punto final: `add`, `fix`, `update` (no `added`, `fixed`).
+- Máximo ~72 caracteres en la primera línea.
+- Un commit = un cambio lógico coherente.
+- Si el cambio rompe compatibilidad, agregar `!` después del scope (`feat(auth)!: ...`) y describir el impacto en el footer con `BREAKING CHANGE:`.
+
+#### Ejemplos
+
+```
+feat(settings): add project-level URL routing with JWT and worker_verification
+fix(documents): validate file size before upload to Firebase Storage
+docs(readme): document verification status endpoint
+refactor(workers): extract availability logic into WorkerService
+chore(build): bump djangorestframework-simplejwt to 5.3
+```
 
 ## Contacto
 

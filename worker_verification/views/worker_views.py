@@ -2,9 +2,13 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
+from django.db import transaction
 from ..services.worker_service import worker_service
+from ..services.audit_service import audit_service
 from ..serializers import (
     WorkerSerializer,
+    WorkerCreateSerializer,
     WorkerUpdateSerializer,
     WorkerAvailabilitySerializer,
     WorkerOnlineStatusSerializer,
@@ -17,12 +21,25 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Los escribe el servidor (calificación); un PUT del panel no los toca
+SERVER_OWNED_FIELDS = ('id', 'rating', 'totalRatings', 'timestamp')
+
+
+def _worker_not_found():
+    # update_data de Firebase crearía el nodo: se responde 404 antes de escribir
+    return Response({
+        'success': False,
+        'error': 'Trabajador no encontrado'
+    }, status=status.HTTP_404_NOT_FOUND)
+
 
 class WorkerViewSet(viewsets.ViewSet):
     """
     ViewSet para operaciones con trabajadores
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'panel'
     
     def list(self, request):
         """
@@ -100,30 +117,49 @@ class WorkerViewSet(viewsets.ViewSet):
     def create(self, request):
         """
         POST /api/workers/
-        Crea un nuevo trabajador
+        Crea un nuevo trabajador con Firebase Auth
         """
         try:
-            serializer = WorkerSerializer(data=request.data)
-            
+            serializer = WorkerCreateSerializer(data=request.data)
+
             if not serializer.is_valid():
                 return Response({
                     'success': False,
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-            worker = worker_service.create_worker(serializer.validated_data)
-            
-            return Response({
+
+            # Usar nuevo método con autenticación
+            worker, password_generated, auth_existed = worker_service.create_worker_with_auth(
+                serializer.validated_data
+            )
+
+            response_data = {
                 'success': True,
                 'message': 'Trabajador creado exitosamente',
                 'data': WorkerSerializer(worker).data
-            }, status=status.HTTP_201_CREATED)
-            
+            }
+
+            # Incluir contraseña si fue auto-generada
+            if password_generated:
+                response_data['password'] = password_generated
+                response_data['message'] += ' (Contraseña generada automáticamente)'
+
+            if auth_existed:
+                response_data['warning'] = 'El usuario ya existía en Firebase Auth'
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            logger.error(f"Validation error creating worker: {str(e)}")
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Error creating worker: {str(e)}")
             return Response({
                 'success': False,
-                'error': str(e)
+                'error': 'Error interno del servidor'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     def update(self, request, pk=None):
@@ -147,7 +183,11 @@ class WorkerViewSet(viewsets.ViewSet):
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            worker_service.update_worker(pk, serializer.validated_data)
+            # Los valores por defecto del serializer (rating 0, isAvailable true...)
+            # no deben pisar lo guardado: solo se escriben los campos enviados
+            update_data = {key: value for key, value in serializer.validated_data.items()
+                           if key in request.data and key not in SERVER_OWNED_FIELDS}
+            worker_service.update_worker(pk, update_data)
             
             return Response({
                 'success': True,
@@ -232,6 +272,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"isAvailable": true/false}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerAvailabilitySerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -266,6 +308,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"isOnline": true/false}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerOnlineStatusSerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -294,28 +338,39 @@ class WorkerViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["patch"], url_path="verification_status")
     def update_verification_status(self, request, pk=None):
         """
-        Actualiza el estado de verificación de un trabajador
+        Actualiza el estado de verificación de un trabajador y registra el
+        cambio en VerificationLog con el administrador autenticado como revisor
         """
         serializer = WorkerVerificationStatusSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        worker = worker_service.get_worker_by_id(pk)
-        if not worker:
-            return Response({"error": "Worker not found"}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            worker = worker_service.get_worker_by_id(pk)
+            if not worker:
+                return Response({"error": "Worker not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # estado actual
-        current_status = worker.get("verificationStatus", {})
+            # estado actual
+            current_status = worker.get("verificationStatus", {})
 
-    # Solo actualizar status, conservar lo demás (ej: submittedAt)
-        updated_status = {**current_status, **serializer.validated_data}
+            # Solo actualizar status, conservar lo demás (ej: submittedAt)
+            updated_status = {**current_status, **serializer.validated_data}
 
-        worker["verificationStatus"] = updated_status
-        worker_service.update_worker(pk, worker)
+            worker["verificationStatus"] = updated_status
 
-        return Response({
-        "message": "Verification status updated successfully",
-        "verificationStatus": updated_status
-    })
+            # Si Firebase falla, el log se revierte
+            with transaction.atomic():
+                audit_service.log_worker_status_change(request.user, pk, updated_status["status"])
+                worker_service.update_worker(pk, worker)
+
+            return Response({
+                "message": "Verification status updated successfully",
+                "verificationStatus": updated_status
+            })
+        except Exception:
+            logger.exception(f"Error updating verification status of worker {pk}")
+            return Response({
+                "error": "No se pudo actualizar el estado de verificación. Intenta de nuevo más tarde."
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=True, methods=['patch'])
     def location(self, request, pk=None):
@@ -326,6 +381,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"latitude": 5.34851, "longitude": -73.902605}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerLocationSerializer(data=request.data)
             
             if not serializer.is_valid():
@@ -361,6 +418,8 @@ class WorkerViewSet(viewsets.ViewSet):
         Body: {"rating": 4.5}
         """
         try:
+            if not worker_service.worker_exists(pk):
+                return _worker_not_found()
             serializer = WorkerRatingSerializer(data=request.data)
             
             if not serializer.is_valid():

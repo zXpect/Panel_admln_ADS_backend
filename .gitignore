@@ -11,9 +11,26 @@ db.sqlite3
 # Logs
 logs/
 
+# Cobertura de pruebas
+.coverage
+htmlcov/
+
+# Estáticos generados por collectstatic
+staticfiles/
+
 # Cachés de Python
 __pycache__/
 */__pycache__/
 
-# Migraciones de Django
-worker_verification/migrations/
+# Firebase (reglas y emulador)
+firebase/node_modules/
+firebase-debug.log
+database-debug.log
+firebase/*-debug.log
+
+# Credenciales de cuentas de servicio de Google/Firebase con cualquier nombre
+# (la consola las descarga como <proyecto>-<id>.json)
+*serviceAccount*.json
+*firebase-adminsdk*.json
+adsv-d87e1-*.json
+firebase-credentials*.json

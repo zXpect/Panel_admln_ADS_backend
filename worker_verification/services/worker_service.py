@@ -1,3 +1,5 @@
+from pricing.services.worker_categories import legacy_work_to_category, worker_categories
+
 from .firebase_service import firebase_service
 import logging
 from datetime import datetime
@@ -68,35 +70,31 @@ class WorkerService:
     
     def get_workers_by_category(self, category):
         """
-        Obtiene trabajadores por categoría de trabajo
-        
-        Args:
-            category (str): Categoría de trabajo
-            
+        Trabajadores de un oficio. Acepta el slug del catálogo ('plomeria') o
+        un nombre viejo ('Plomero'). Usa `categories` y, si un trabajador aún
+        no lo tiene, el oficio que se deduce de `work` (D16).
+
         Returns:
             list: Lista de trabajadores
         """
         try:
-            workers = self.firebase.query_data(
-                self.WORKERS_PATH,
-                order_by='work',
-                equal_to=category
-            )
-            
-            if not workers:
+            valid_slugs = self._valid_category_slugs()
+            slug = legacy_work_to_category(category, valid_slugs)
+            if slug is None:
                 return []
-            
-            workers_list = []
-            for worker_id, worker_data in workers.items():
-                worker_data['id'] = worker_id
-                workers_list.append(worker_data)
-            
-            logger.info(f"Retrieved {len(workers_list)} workers in category {category}")
-            return workers_list
+            workers = [worker for worker in (self.get_all_workers() or [])
+                       if slug in worker_categories(worker, valid_slugs)]
+            logger.info(f"Retrieved {len(workers)} workers in category {slug}")
+            return workers
         except Exception as e:
             logger.error(f"Error getting workers by category: {str(e)}")
             raise
-    
+
+    @staticmethod
+    def _valid_category_slugs():
+        from pricing.models import ServiceCategory
+        return set(ServiceCategory.objects.values_list('slug', flat=True))
+
     def get_available_workers(self):
         """
         Obtiene trabajadores disponibles
@@ -153,32 +151,95 @@ class WorkerService:
             logger.error(f"Error getting online workers: {str(e)}")
             raise
     
+    def create_worker_with_auth(self, worker_data):
+        """
+        Crea un nuevo trabajador con autenticación Firebase
+        - Crea usuario en Firebase Auth
+        - Usa el UID generado como Worker ID
+        - Crea perfil en Realtime Database
+
+        Args:
+            worker_data (dict): Datos del trabajador (sin ID)
+
+        Returns:
+            tuple: (worker_data, password_generated, auth_existed)
+        """
+        try:
+            from .bulk_worker_service import bulk_worker_service
+
+            email = worker_data.get('email')
+            password = worker_data.get('password', '')
+            name = worker_data.get('name', '')
+            lastName = worker_data.get('lastName', '')
+            display_name = f"{name} {lastName}".strip()
+
+            # Crear usuario en Firebase Auth
+            user_id, password_used, auth_error = bulk_worker_service.create_firebase_auth_user(
+                email, password, display_name
+            )
+
+            if not user_id:
+                raise ValueError(f"Error creando usuario en Firebase Auth: {auth_error}")
+            if auth_error is not None and bulk_worker_service.account_in_use(user_id):
+                raise ValueError('El correo ya pertenece a una cuenta de ADS')
+
+            # Agregar ID y timestamp
+            worker_data['id'] = user_id
+            worker_data['timestamp'] = int(datetime.now().timestamp() * 1000)
+            worker_data['isAvailable'] = True  # Individual workers son available por defecto
+            worker_data['isOnline'] = False
+            worker_data['rating'] = worker_data.get('rating', 0.0)
+            worker_data['totalRatings'] = worker_data.get('totalRatings', 0)
+
+            # Remover password antes de guardar en Database
+            if 'password' in worker_data:
+                del worker_data['password']
+
+            # Asegurar tipos correctos para compatibilidad
+            if 'latitude' in worker_data:
+                worker_data['latitude'] = float(worker_data['latitude'])
+            if 'longitude' in worker_data:
+                worker_data['longitude'] = float(worker_data['longitude'])
+            if 'pricePerHour' in worker_data:
+                worker_data['pricePerHour'] = float(worker_data['pricePerHour'])
+
+            # Crear perfil en Realtime Database
+            path = f"{self.WORKERS_PATH}/{user_id}"
+            self.firebase.set_data(path, worker_data)
+
+            logger.info(f"Worker created with auth: {user_id} - {email}")
+            return worker_data, password_used, auth_error is not None
+
+        except Exception as e:
+            logger.error(f"Error creating worker with auth: {str(e)}")
+            raise
+
     def create_worker(self, worker_data):
         """
-        Crea un nuevo trabajador
-        
+        Crea un nuevo trabajador (LEGACY - mantener para compatibilidad)
+
         Args:
             worker_data (dict): Datos del trabajador
-            
+
         Returns:
             dict: Trabajador creado
         """
         try:
             worker_id = worker_data.get('id')
-            
+
             if not worker_id:
                 raise ValueError("Worker ID is required")
-            
+
             # Agregar timestamp
             worker_data['timestamp'] = int(datetime.now().timestamp() * 1000)
             worker_data['isAvailable'] = worker_data.get('isAvailable', True)
             worker_data['isOnline'] = worker_data.get('isOnline', False)
             worker_data['rating'] = worker_data.get('rating', 0)
             worker_data['totalRatings'] = worker_data.get('totalRatings', 0)
-            
+
             path = f"{self.WORKERS_PATH}/{worker_id}"
             self.firebase.set_data(path, worker_data)
-            
+
             logger.info(f"Worker {worker_id} created successfully")
             return worker_data
         except Exception as e:
@@ -434,6 +495,7 @@ class WorkerService:
                     'by_category': {}
                 }
             
+            valid_slugs = self._valid_category_slugs()
             stats = {
                 'total': len(all_workers),
                 'available': 0,
@@ -457,9 +519,10 @@ class WorkerService:
                     if verification_status.get('status') == 'approved':
                         stats['verified'] += 1
                 
-                # Contar por categoría
-                category = worker.get('work', 'Sin categoría')
-                stats['by_category'][category] = stats['by_category'].get(category, 0) + 1
+                # Contar por oficio (slug del catálogo; un trabajador puede tener hasta tres)
+                slugs = worker_categories(worker, valid_slugs) or {'sin_oficio'}
+                for slug in slugs:
+                    stats['by_category'][slug] = stats['by_category'].get(slug, 0) + 1
             
             logger.info(f"Worker statistics calculated")
             return stats

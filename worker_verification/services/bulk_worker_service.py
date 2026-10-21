@@ -15,6 +15,7 @@ class BulkWorkerUploadService:
     """
     
     WORKERS_PATH = 'User/Trabajadores'
+    CLIENTS_PATH = 'User/Clientes'
     
     # Mapeo de columnas Excel a campos del modelo
     EXCEL_COLUMN_MAPPING = {
@@ -151,6 +152,15 @@ class BulkWorkerUploadService:
             logger.error(f"Error creating Firebase Auth user: {str(e)}")
             return None, None, str(e)
     
+    def account_in_use(self, user_id):
+        """
+        True si el uid ya tiene perfil de cliente o de trabajador. Crear el
+        trabajador encima sobrescribiría su perfil (verificación, rating) o
+        dejaría a un cliente con los dos roles.
+        """
+        return any(self.firebase.get_data(f"{path}/{user_id}")
+                   for path in (self.WORKERS_PATH, self.CLIENTS_PATH))
+
     def create_worker_profile(self, user_id, worker_data):
         """
         Crea el perfil del trabajador en Realtime Database
@@ -263,6 +273,16 @@ class BulkWorkerUploadService:
                             'error': f"Error en Auth: {auth_error}"
                         })
                         continue
+
+                    if auth_error is not None and self.account_in_use(user_id):
+                        results['failed'] += 1
+                        results['error_details'].append({
+                            'row': row_number,
+                            'email': email,
+                            'name': display_name,
+                            'error': 'El correo ya pertenece a una cuenta de ADS'
+                        })
+                        continue
                     
                     # Crear perfil en Database
                     success, profile_error = self.create_worker_profile(user_id, worker_data)
@@ -287,11 +307,14 @@ class BulkWorkerUploadService:
                         })
                         
                         # Intentar eliminar usuario de Auth si falló el perfil
-                        try:
-                            auth.delete_user(user_id)
-                            logger.info(f"Rolled back Auth user: {user_id}")
-                        except:
-                            pass
+                        # Solo se deshace la cuenta si se acaba de crear: una que ya
+                        # existía en Auth es de otra persona
+                        if auth_error is None:
+                            try:
+                                auth.delete_user(user_id)
+                                logger.info(f"Rolled back Auth user: {user_id}")
+                            except Exception:
+                                logger.error(f"Could not roll back Auth user {user_id}")
                     
                 except Exception as e:
                     results['failed'] += 1

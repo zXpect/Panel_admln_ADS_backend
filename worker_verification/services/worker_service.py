@@ -195,14 +195,6 @@ class WorkerService:
             if 'password' in worker_data:
                 del worker_data['password']
 
-            # Asegurar tipos correctos para compatibilidad
-            if 'latitude' in worker_data:
-                worker_data['latitude'] = float(worker_data['latitude'])
-            if 'longitude' in worker_data:
-                worker_data['longitude'] = float(worker_data['longitude'])
-            if 'pricePerHour' in worker_data:
-                worker_data['pricePerHour'] = float(worker_data['pricePerHour'])
-
             # Crear perfil en Realtime Database
             path = f"{self.WORKERS_PATH}/{user_id}"
             self.firebase.set_data(path, worker_data)

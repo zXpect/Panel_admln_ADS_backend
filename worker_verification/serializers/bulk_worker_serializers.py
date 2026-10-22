@@ -15,9 +15,6 @@ class BulkWorkerUploadSerializer(serializers.Serializer):
     
     # Campos opcionales
     description = serializers.CharField(required=False, allow_blank=True, default='')
-    latitude = serializers.FloatField(required=False, default=0.0)
-    longitude = serializers.FloatField(required=False, default=0.0)
-    pricePerHour = serializers.FloatField(required=False, default=0.0)
     experience = serializers.CharField(required=False, allow_blank=True, default='')
     
     # Campo para contraseña temporal (opcional en Excel)
@@ -46,24 +43,6 @@ class BulkWorkerUploadSerializer(serializers.Serializer):
         if not value or not value.strip():
             raise serializers.ValidationError("La categoría de trabajo es obligatoria")
         return value.strip()
-    
-    def validate_pricePerHour(self, value):
-        """Valida que el precio sea positivo"""
-        if value < 0:
-            raise serializers.ValidationError("El precio debe ser positivo")
-        return value
-    
-    def validate_latitude(self, value):
-        """Valida rango de latitud"""
-        if value < -90 or value > 90:
-            raise serializers.ValidationError("Latitud debe estar entre -90 y 90")
-        return value
-    
-    def validate_longitude(self, value):
-        """Valida rango de longitud"""
-        if value < -180 or value > 180:
-            raise serializers.ValidationError("Longitud debe estar entre -180 y 180")
-        return value
 
 
 class BulkWorkerResultSerializer(serializers.Serializer):

@@ -1,5 +1,8 @@
 from unittest import mock
 
+from pricing.models import ServiceCategory
+
+from ..models import SystemConfig
 from ..services.bulk_worker_service import bulk_worker_service
 from .base import ANA, BETO, CARO, CLIENT, PanelTestCase
 
@@ -7,8 +10,8 @@ WORKERS = '/api/workers/'
 
 
 def new_worker(**overrides):
-    body = {'name': 'Dora', 'lastName': 'León', 'email': 'Dora@ADS.test', 'work': 'Jardinería',
-            'phone': '310-555-1234', 'latitude': 5.3086, 'longitude': -73.815}
+    body = {'name': 'Dora', 'lastName': 'León', 'email': 'Dora@ADS.test', 'categories': ['jardineria'],
+            'phone': '310-555-1234'}
     body.update(overrides)
     return body
 
@@ -89,6 +92,33 @@ class WorkerCreateTests(PanelTestCase):
                          ('dora@ads.test', '3105551234', True, 0.0))
         self.assertNotIn('password', stored)
         self.assertEqual(self.auth_call.args, ('dora@ads.test', '', 'Dora León'))
+        # Como el registro de la app: oficios del catálogo y `work` con el primero
+        self.assertEqual((stored['categories'], stored['work']), (['jardineria'], 'Jardinería'))
+
+    def test_categories_follow_the_catalog_and_the_limit(self):
+        # Acepta slug, nombre o el valor viejo de `work`, sin repetir; sin precio ni ubicación
+        response = self.create(categories=['Plomero', 'pintura', 'Plomería'], pricePerHour=50000, latitude=5.3)
+        self.assertEqual(response.status_code, 201)
+        stored = self.worker('new-uid')
+        self.assertEqual((stored['categories'], stored['work']), (['plomeria', 'pintura'], 'Plomería'))
+        self.assertNotIn('pricePerHour', stored)
+        self.assertNotIn('latitude', stored)
+
+    def test_invalid_categories_are_refused(self):
+        ServiceCategory.objects.filter(slug='cerrajeria').update(is_active=False)
+        cases = {
+            'vacío': [], 'no es oficio': ['ferreteria'], 'inactivo': ['cerrajeria'],
+            'más de 3': ['plomeria', 'pintura', 'electricidad', 'jardineria'],
+        }
+        for label, categories in cases.items():
+            with self.subTest(label):
+                response = self.create(categories=categories)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('categories', response.json()['errors'])
+        self.assertIsNone(self.worker('new-uid'))
+        # El máximo sale de SystemConfig (worker_max_categories)
+        SystemConfig.objects.filter(key='worker_max_categories').update(value='4')
+        self.assertEqual(self.create(categories=cases['más de 3']).status_code, 201)
 
     def test_existing_auth_user_without_profile_gets_one(self):
         response = self.create(auth_result=('old-uid', None, 'Usuario ya existe en Firebase Auth'))
@@ -107,7 +137,7 @@ class WorkerCreateTests(PanelTestCase):
         self.assertIsNone(self.worker(CLIENT))
 
     def test_validation_and_auth_errors(self):
-        for overrides in ({'email': 'no-es-correo'}, {'phone': '12'}, {'latitude': 91}, {'name': ''}):
+        for overrides in ({'email': 'no-es-correo'}, {'phone': '12'}, {'categories': None}, {'name': ''}):
             with self.subTest(overrides=overrides):
                 self.assertEqual(self.create(**overrides).status_code, 400)
         self.assertEqual(self.create(auth_result=(None, None, 'cuota excedida')).status_code, 400)
@@ -125,6 +155,17 @@ class WorkerUpdateTests(PanelTestCase):
         # Antes el PUT dejaba rating y totalRatings en 0 y volvía a poner isAvailable en true
         self.assertEqual((ana['rating'], ana['totalRatings'], ana['isOnline']), (4.5, 2, True))
         self.assertEqual(self.worker(CARO)['isAvailable'], False)
+
+    def test_put_updates_categories_but_not_price_or_location(self):
+        response = self.client.put(f'{WORKERS}{CARO}/', {'categories': ['pintura', 'carpinteria'],
+                                                         'pricePerHour': 9, 'latitude': 1}, format='json')
+        self.assertEqual(response.status_code, 200)
+        caro = self.worker(CARO)
+        self.assertEqual((caro['categories'], caro['work']), (['pintura', 'carpinteria'], 'Pintura'))
+        self.assertNotIn('pricePerHour', caro)
+        self.assertNotEqual(caro.get('latitude'), 1)
+        response = self.client.patch(f'{WORKERS}{CARO}/', {'categories': ['ferreteria']}, format='json')
+        self.assertEqual(response.status_code, 400)
 
     def test_patch(self):
         self.assertEqual(self.client.patch(f'{WORKERS}{BETO}/', {'phone': '3200000000'}, format='json').status_code, 200)

@@ -37,6 +37,40 @@ def as_list(value):
     return []
 
 
+def resolve_worker_categories(values):
+    """
+    Oficios que el panel o la carga masiva le asignan a un trabajador (D16), igual
+    que en el registro de la app: slugs de oficios activos del catálogo, sin
+    repetir y como máximo `worker_max_categories`. Acepta el slug, el nombre o un
+    valor viejo de `work` ('Plomero').
+
+    Devuelve (slugs, work), con `work` = nombre del primer oficio, que la app
+    sigue escribiendo como respaldo. Lanza ValueError con un mensaje para el administrador.
+    """
+    from ..models import ServiceCategory
+    from .pricing_service import pricing_service
+
+    names = dict(ServiceCategory.objects.filter(is_active=True).values_list('slug', 'name'))
+    slugs, unknown = [], []
+    for value in values:
+        if not str(value or '').strip():
+            continue
+        slug = legacy_work_to_category(value, names)
+        if slug is None:
+            unknown.append(str(value).strip())
+        elif slug not in slugs:
+            slugs.append(slug)
+
+    if unknown:
+        raise ValueError(f"Oficio no válido o inactivo: {', '.join(unknown)}")
+    if not slugs:
+        raise ValueError('Elige al menos un oficio')
+    max_categories = pricing_service.config_int(pricing_service.CONFIG_WORKER_MAX_CATEGORIES)
+    if len(slugs) > max_categories:
+        raise ValueError(f'Máximo {max_categories} oficios por trabajador')
+    return slugs, names[slugs[0]]
+
+
 def worker_categories(worker, valid_slugs):
     """
     Oficios del trabajador: `categories` si ya existe; si no, el oficio que se

@@ -21,10 +21,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Los escribe el servidor (calificación); un PUT del panel no los toca
-SERVER_OWNED_FIELDS = ('id', 'rating', 'totalRatings', 'timestamp')
-
-
 def _worker_not_found():
     # update_data de Firebase crearía el nodo: se responde 404 antes de escribir
     return Response({
@@ -175,19 +171,17 @@ class WorkerViewSet(viewsets.ViewSet):
                     'error': 'Trabajador no encontrado'
                 }, status=status.HTTP_404_NOT_FOUND)
             
-            serializer = WorkerSerializer(data=request.data)
-            
+            # Mismo serializer que el PATCH: sin valores por defecto, así que solo se
+            # escriben los campos enviados y nunca la calificación (la escribe el servidor)
+            serializer = WorkerUpdateSerializer(data=request.data)
+
             if not serializer.is_valid():
                 return Response({
                     'success': False,
                     'errors': serializer.errors
                 }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Los valores por defecto del serializer (rating 0, isAvailable true...)
-            # no deben pisar lo guardado: solo se escriben los campos enviados
-            update_data = {key: value for key, value in serializer.validated_data.items()
-                           if key in request.data and key not in SERVER_OWNED_FIELDS}
-            worker_service.update_worker(pk, update_data)
+
+            worker_service.update_worker(pk, serializer.validated_data)
             
             return Response({
                 'success': True,

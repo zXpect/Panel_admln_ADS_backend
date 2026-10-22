@@ -2,23 +2,42 @@ import re
 
 from rest_framework import serializers
 
-from pricing.services.worker_categories import as_list
+from pricing.services.worker_categories import as_list, resolve_worker_categories
 
 
-class WorkerCreateSerializer(serializers.Serializer):
+class CategoriesMixin:
+    """
+    `categories` como en el registro de la app (D16): slugs del catálogo, hasta
+    `worker_max_categories`. También se escribe `work` con el primer oficio,
+    el respaldo que leen las versiones viejas de la app.
+    """
+
+    def validate_categories(self, value):
+        try:
+            slugs, self._work = resolve_worker_categories(value)
+        except ValueError as error:
+            raise serializers.ValidationError(str(error))
+        return slugs
+
+    def validate(self, attrs):
+        if 'categories' in attrs:
+            attrs['work'] = self._work
+        return attrs
+
+
+class WorkerCreateSerializer(CategoriesMixin, serializers.Serializer):
     """
     Serializer específico para creación de trabajadores individuales
-    El ID se genera automáticamente en el backend desde Firebase Auth
+    El ID se genera automáticamente en el backend desde Firebase Auth.
+    Sin precio por hora (los precios salen del catálogo y la cotización) ni
+    ubicación (la escribe la app al conectarse).
     """
     name = serializers.CharField(max_length=100, required=True)
     lastName = serializers.CharField(max_length=100, required=True)
     email = serializers.EmailField(required=True)
-    work = serializers.CharField(max_length=100, required=True)
+    categories = serializers.ListField(child=serializers.CharField(max_length=60), required=True)
     phone = serializers.CharField(max_length=20, required=True)
     description = serializers.CharField(required=False, allow_blank=True)
-    latitude = serializers.FloatField(required=False, default=0.0)
-    longitude = serializers.FloatField(required=False, default=0.0)
-    pricePerHour = serializers.FloatField(required=False, default=0.0)
     experience = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(required=False, min_length=6, allow_blank=True)
 
@@ -35,26 +54,9 @@ class WorkerCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Número de teléfono inválido (debe tener entre 7 y 15 dígitos)")
         return phone
 
-    def validate_pricePerHour(self, value):
-        """Valida que el precio sea positivo"""
-        if value < 0:
-            raise serializers.ValidationError("El precio debe ser positivo")
-        return value
-
-    def validate_latitude(self, value):
-        """Valida que la latitud esté en rango válido"""
-        if value < -90 or value > 90:
-            raise serializers.ValidationError("Latitud debe estar entre -90 y 90")
-        return value
-
-    def validate_longitude(self, value):
-        """Valida que la longitud esté en rango válido"""
-        if value < -180 or value > 180:
-            raise serializers.ValidationError("Longitud debe estar entre -180 y 180")
-        return value
-
 
 class WorkerSerializer(serializers.Serializer):
+    """Salida del trabajador para el panel (las escrituras usan WorkerUpdateSerializer)."""
     id = serializers.CharField(read_only=True)
     name = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
     lastName = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
@@ -70,7 +72,6 @@ class WorkerSerializer(serializers.Serializer):
     longitude = serializers.FloatField(required=False, default=0.0)
     rating = serializers.FloatField(required=False, default=0.0)
     totalRatings = serializers.IntegerField(required=False, default=0)
-    pricePerHour = serializers.FloatField(required=False, default=0.0)
     experience = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     timestamp = serializers.IntegerField(required=False, allow_null=True)
     # Cuenta habilitada (HU-32); sin el campo cuenta como activa. Solo lectura:
@@ -96,30 +97,23 @@ class WorkerSerializer(serializers.Serializer):
         if value < 0 or value > 5:
             raise serializers.ValidationError("Rating debe estar entre 0 y 5")
         return value
-    
-    def validate_pricePerHour(self, value):
-        """Valida que el precio sea positivo"""
-        if value < 0:
-            raise serializers.ValidationError("El precio debe ser positivo")
-        return value
 
 
-class WorkerUpdateSerializer(serializers.Serializer):
+class WorkerUpdateSerializer(CategoriesMixin, serializers.Serializer):
     """
-    Serializer para actualizar trabajadores (campos opcionales)
+    Serializer para actualizar trabajadores (PUT y PATCH; solo se escriben los
+    campos enviados). La calificación la escribe el servidor y la ubicación la
+    app (o PATCH .../location/), así que aquí no se aceptan.
     """
     name = serializers.CharField(max_length=100, required=False)
     lastName = serializers.CharField(max_length=100, required=False)
     email = serializers.EmailField(required=False)
-    work = serializers.CharField(max_length=100, required=False)
+    categories = serializers.ListField(child=serializers.CharField(max_length=60), required=False)
     isAvailable = serializers.BooleanField(required=False)
     isOnline = serializers.BooleanField(required=False)
     image = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    latitude = serializers.FloatField(required=False)
-    longitude = serializers.FloatField(required=False)
-    pricePerHour = serializers.FloatField(required=False)
     experience = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 

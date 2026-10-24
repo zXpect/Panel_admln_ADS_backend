@@ -108,6 +108,32 @@ class BulkUploadTests(PanelTestCase):
         # Las filas con error no crean cuenta en Firebase Auth
         self.assertEqual(self.auth.create_user.call_count, 1)
 
+    def test_rows_without_required_fields_create_nothing(self):
+        # DEF-27: una fila sin correo creaba una cuenta que no podía iniciar sesión
+        response = self.upload(excel([
+            row('luis@ads.test'),
+            row(None),
+            row('   '),
+            row('sin-arroba.ads.test'),
+            row('marta@ads.test', Nombre=None),
+            row('sara@ads.test', Apellido=''),
+            row('pedro@ads.test', Categoria=None),
+        ]))
+
+        self.assertEqual(response.status_code, 207)
+        data = response.json()['data']
+        self.assertEqual((data['successful'], data['failed']), (1, 6))
+        errors = [detail['error'] for detail in data['error_details']]
+        self.assertEqual(errors[:2], ['Falta el correo', 'Falta el correo'])
+        self.assertIn('Correo no válido', errors[2])
+        self.assertEqual(errors[3:], ['Falta el nombre', 'Falta el apellido', 'Falta el oficio'])
+        self.assertEqual(self.auth.create_user.call_count, 1)
+
+    def test_email_is_trimmed_and_lowercased(self):
+        self.upload(excel([row('  Luis@ADS.test ')]))
+        self.assertEqual(self.auth.create_user.call_args.kwargs['email'], 'luis@ads.test')
+        self.assertEqual(self.worker('bulk-1')['email'], 'luis@ads.test')
+
     def test_auth_error_is_reported_per_row(self):
         self.auth.create_user.side_effect = Exception('cuota excedida')
         response = self.upload(excel([row('luis@ads.test')]))

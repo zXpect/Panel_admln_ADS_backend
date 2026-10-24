@@ -304,6 +304,14 @@ class NotificationApiTests(AppApiTestCase):
         self.assertEqual(message.token, 'fcm-client')
         self.assertEqual(message.data['status'], 'on_the_way')
 
+    def test_status_change_names_the_worker(self):
+        """Los avisos de estado nombran al técnico, como los demás (DEF-30)."""
+        self.set_request(status='completed', worker_name='Breider López')
+        self.notify(WORKER, 'status_change')
+        message = self.fcm_send.call_args.args[0]
+        self.assertEqual(message.data['title'], 'Trabajo completado')
+        self.assertEqual(message.data['body'], 'Breider López terminó el trabajo. Paga y califica el servicio')
+
     def test_stale_token_is_removed(self):
         from firebase_admin import messaging
         self.fcm_send.side_effect = messaging.UnregisteredError('Requested entity was not found.')

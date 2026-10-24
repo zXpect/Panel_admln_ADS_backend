@@ -243,6 +243,18 @@ class CancelTests(RequestFlowTestCase):
         self.assertEqual((request['cancelled_by'], request['cancellation_reason_text']), ('worker', 'Se me dañó la moto'))
         self.assertEqual(self.sent_notifications(), [('fcm-client', 'request_cancelled')])
 
+    def test_cancel_push_carries_reason(self):
+        """El push dice el motivo: la etiqueta de la lista o el texto con «otro» (DEF-27)."""
+        self.set_request(client_name='Emmanuel', worker_name='Breider López')
+        self.cancel(reason_code='horario')
+        self.assertEqual(self.fcm_send.call_args.args[0].data['body'],
+                         'Emmanuel canceló la solicitud. Motivo: Por el horario')
+
+        self.set_request(status='pending')
+        self.cancel(uid=WORKER, reason_code='otro', reason_text='Se me dañó la moto')
+        self.assertEqual(self.fcm_send.call_args.args[0].data['body'],
+                         'Breider López canceló la solicitud. Motivo: Se me dañó la moto')
+
     def test_started_service_answers_409_pqr(self):
         for status in ('on_the_way', 'in_progress', 'completed'):
             with self.subTest(status=status):

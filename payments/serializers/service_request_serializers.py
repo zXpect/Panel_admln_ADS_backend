@@ -46,6 +46,16 @@ CANCELLATION_REASONS = {
 }
 OTHER_REASON = 'otro'
 MAX_REASON_TEXT = 300
+# Etiquetas de los motivos de cancelación para el push (las mismas de ReasonHelper en la app)
+CANCELLATION_LABELS = {
+    'ya_no_lo_necesito': 'Ya no lo necesito',
+    'encontre_otra_opcion': 'Encontré otra opción',
+    'precio': 'Por el precio',
+    'horario': 'Por el horario',
+    'no_disponible': 'No estoy disponible',
+    'fuera_de_zona': 'Está fuera de mi zona',
+    'trabajo_no_corresponde': 'El trabajo no corresponde a mi oficio',
+}
 
 
 def require_text_with_other(code, text, text_field):

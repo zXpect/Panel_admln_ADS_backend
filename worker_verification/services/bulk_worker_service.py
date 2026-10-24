@@ -16,6 +16,8 @@ class BulkWorkerUploadService:
     Servicio para carga masiva de trabajadores desde Excel
     """
     
+    EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
     WORKERS_PATH = 'User/Trabajadores'
     CLIENTS_PATH = 'User/Clientes'
     
@@ -111,8 +113,21 @@ class BulkWorkerUploadService:
         worker_data.setdefault('totalRatings', 0)
         worker_data.setdefault('phone', '')  # ✅ Asegurar que phone sea string vacío si no existe
 
+        # Obligatorios por fila (DEF-27): antes una fila sin correo creaba una cuenta que no
+        # podía iniciar sesión. El ValueError deja la fila con error sin crear nada.
+        for field, label in (('name', 'nombre'), ('lastName', 'apellido'), ('email', 'correo')):
+            value = worker_data.get(field)
+            worker_data[field] = '' if value is None or pd.isna(value) else str(value).strip()
+            if not worker_data[field]:
+                raise ValueError(f"Falta el {label}")
+        worker_data['email'] = worker_data['email'].lower()
+        if not self.EMAIL_PATTERN.match(worker_data['email']):
+            raise ValueError(f"Correo no válido: {worker_data['email']}")
+
         # Oficios del catálogo; un valor inválido o de más lanza ValueError y la fila queda con error
         work = '' if pd.isna(worker_data.get('work')) else str(worker_data.get('work', ''))
+        if not work.strip():
+            raise ValueError("Falta el oficio")
         worker_data['categories'], worker_data['work'] = resolve_worker_categories(re.split(r'[,;]', work))
 
         # ✅ CORREGIDO: timestamp como LONG (milisegundos) para compatibilidad con Android
@@ -316,10 +331,15 @@ class BulkWorkerUploadService:
                     
                 except Exception as e:
                     results['failed'] += 1
+                    # Una celda vacía llega como NaN, que no se puede enviar en JSON
+                    def cell(column):
+                        value = row.get(column, '')
+                        return '' if pd.isna(value) else str(value).strip()
+
                     results['error_details'].append({
                         'row': row_number,
-                        'email': row.get('email', 'N/A'),
-                        'name': f"{row.get('nombre', '')} {row.get('apellido', '')}",
+                        'email': cell('email'),
+                        'name': f"{cell('nombre')} {cell('apellido')}".strip(),
                         'error': str(e)
                     })
             

@@ -141,6 +141,7 @@ REST_FRAMEWORK = {
         'payments': '30/min',
         'payments_webhook': '120/min',
         'service_requests': '30/min',
+        'catalog': '60/min',   # público, por IP (DEF-17)
         'ratings': '10/min',
         'notifications': '60/min',
         'pqr': '20/min',

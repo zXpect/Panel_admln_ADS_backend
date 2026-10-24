@@ -287,7 +287,7 @@ class NotificationApiTests(AppApiTestCase):
         self.assertTrue(response.json()['data']['sent'])
         message = self.fcm_send.call_args.args[0]
         self.assertEqual(message.token, 'fcm-worker')
-        self.assertEqual(message.data['title'], 'Nueva Solicitud de Servicio')
+        self.assertEqual(message.data['title'], 'Nueva solicitud de servicio')
         self.assertEqual(message.data['requestId'], REQ)
 
     def test_sender_role_and_status_are_checked(self):
@@ -329,7 +329,7 @@ class NotificationApiTests(AppApiTestCase):
         history = self.fb.get_data(f"notifications/{WORKER}")
         self.assertEqual(len(history), 1)
         entry = next(iter(history.values()))
-        self.assertEqual(entry['title'], 'Nueva Solicitud de Servicio')
+        self.assertEqual(entry['title'], 'Nueva solicitud de servicio')
         self.assertEqual(entry['type'], 'new_request')
         self.assertEqual(entry['request_id'], REQ)
         self.assertFalse(entry['read'])

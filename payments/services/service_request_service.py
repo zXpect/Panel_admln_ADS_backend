@@ -128,7 +128,9 @@ class ServiceRequestService:
             'client_phone': client.get('phone') or '',
             'client_email': client.get('email') or '',
             'worker_id': worker_id,
-            'worker_name': worker.get('name') or 'Trabajador',
+            # Nombre y apellido, como en la búsqueda y el perfil (DEF-25)
+            'worker_name': ' '.join(p.strip() for p in (worker.get('name'), worker.get('lastName'))
+                                    if isinstance(p, str) and p.strip()) or 'Trabajador',
             'worker_phone': worker.get('phone') or '',
             'service_category': category.slug,
             'service_type': category.name,

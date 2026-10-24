@@ -56,21 +56,21 @@ class NotificationService:
 
         if notification_type == 'new_request':
             data.update(
-                title='Nueva Solicitud de Servicio',
+                title='Nueva solicitud de servicio',
                 body=f"Tipo: {request.get('service_type', '')}\nDirección: {request.get('address', '')}",
                 clientId=client_id or '',
             )
             return worker_id, data
 
         if notification_type == 'request_accepted':
-            data.update(title='¡Solicitud Aceptada!', body=f"{worker_name} ha aceptado tu solicitud")
+            data.update(title='¡Solicitud aceptada!', body=f"{worker_name} ha aceptado tu solicitud")
             return client_id, data
 
         if notification_type == 'request_rejected':
             body = 'Tu solicitud no pudo ser atendida'
             if request.get('rejection_reason'):
                 body += f": {request['rejection_reason']}"
-            data.update(title='Solicitud Rechazada', body=body)
+            data.update(title='Solicitud rechazada', body=body)
             return client_id, data
 
         if notification_type == 'status_change':

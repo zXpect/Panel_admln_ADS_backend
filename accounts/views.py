@@ -2,6 +2,7 @@ import logging
 
 from django.db import transaction
 from rest_framework import serializers, status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -41,6 +42,37 @@ class MeView(APIView):
             return error_response('No se pudo eliminar la cuenta; intenta de nuevo',
                                   status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class DeletedEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=254)
+
+
+class DeletedAccountView(APIView):
+    """
+    POST /api/accounts/deleted-status/   (app, pública)
+    Body: {"email": "persona@correo.co"}
+    Dice si la cuenta de ese correo fue eliminada y por quién ('admin' desde el
+    panel o 'user' desde la app). Con la protección contra enumeración de Firebase,
+    el login de una cuenta borrada responde igual que una contraseña errada; la app
+    lo consulta solo cuando falla el login. Un correo que nunca existió y uno que
+    existe responden igual (deleted = false). El límite de peticiones va por IP.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'account_check'
+
+    def post(self, request):
+        serializer = DeletedEmailSerializer(data=request.data)
+        if not serializer.is_valid():
+            return validation_error_response(serializer.errors)
+        try:
+            deleted_by = account_service.deletion_of(serializer.validated_data['email'])
+        except Exception:
+            logger.exception('Error checking a deleted account')
+            return error_response('No se pudo consultar la cuenta', status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'success': True, 'data': {'deleted': deleted_by is not None, 'deleted_by': deleted_by}})
 
 
 class WorkerStatsView(APIView):

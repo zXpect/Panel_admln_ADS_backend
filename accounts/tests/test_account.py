@@ -2,7 +2,9 @@ from unittest import mock
 
 from django.urls import reverse
 
-from accounts.services.account_service import account_service
+from firebase_admin import auth as firebase_auth
+
+from accounts.services.account_service import account_service, email_key
 from payments.tests.test_api import CLIENT, REQ, WORKER, AppApiTestCase
 
 
@@ -17,6 +19,10 @@ class DeleteAccountTests(AppApiTestCase):
         delete_user = mock.patch('accounts.services.account_service.firebase_auth.delete_user')
         self.delete_user = delete_user.start()
         self.addCleanup(delete_user.stop)
+        # Sin Firebase Auth real: el correo sale del perfil
+        get_user = mock.patch('accounts.services.account_service.firebase_auth.get_user', side_effect=Exception('sin auth'))
+        get_user.start()
+        self.addCleanup(get_user.stop)
 
         self.set_request(status='completed', client_name='Carla', client_phone='300', client_email='c@x.co',
                          payment_status='approved')
@@ -84,3 +90,45 @@ class DeleteAccountTests(AppApiTestCase):
 
     def test_requires_app_token(self):
         self.assertEqual(self.api().delete(reverse('accounts:me')).status_code, 401)
+
+    def test_deletion_is_recorded_by_email_hash(self):
+        """El login explica después que la cuenta fue eliminada; no se guarda el correo."""
+        self.delete()
+        record = self.fb.get_data(f"deleted_accounts/{email_key('c@x.co')}")
+        self.assertEqual(record['deleted_by'], 'user')
+        self.assertNotIn('c@x.co', str(self.fb.get_data('deleted_accounts')))
+
+
+class DeletedAccountStatusTests(AppApiTestCase):
+    """POST /api/accounts/deleted-status/: pública, para el login de una cuenta eliminada."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(account_service, 'firebase', self.fb)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        lookup = mock.patch('accounts.services.account_service.firebase_auth.get_user_by_email',
+                            side_effect=firebase_auth.UserNotFoundError('no existe'))
+        self.lookup = lookup.start()
+        self.addCleanup(lookup.stop)
+        self.fb.set_data(f"deleted_accounts/{email_key('borrado@ads.test')}", {'deleted_by': 'admin', 'deleted_at': 1})
+
+    def check(self, email):
+        return self.api().post(reverse('accounts:deleted-status'), {'email': email}, format='json')
+
+    def test_deleted_account_says_who_deleted_it(self):
+        # Sin token, con mayúsculas y espacios en el correo
+        response = self.check('  Borrado@ADS.test ')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data'], {'deleted': True, 'deleted_by': 'admin'})
+
+    def test_unknown_email_is_not_deleted(self):
+        self.assertEqual(self.check('nunca@ads.test').json()['data'], {'deleted': False, 'deleted_by': None})
+
+    def test_registered_again_clears_the_record(self):
+        self.lookup.side_effect = None
+        self.assertFalse(self.check('borrado@ads.test').json()['data']['deleted'])
+        self.assertIsNone(self.fb.get_data(f"deleted_accounts/{email_key('borrado@ads.test')}"))
+
+    def test_invalid_email_is_400(self):
+        self.assertEqual(self.check('no-es-correo').status_code, 400)

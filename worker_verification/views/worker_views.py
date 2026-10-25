@@ -251,7 +251,7 @@ class WorkerViewSet(viewsets.ViewSet):
                 }, status=status.HTTP_404_NOT_FOUND)
 
             with transaction.atomic():
-                account_service.delete_account(pk)
+                account_service.delete_account(pk, deleted_by=account_service.DELETED_BY_ADMIN)
                 ConfigAuditLog.objects.create(
                     admin=request.user, entity='Account', entity_key=pk,
                     old_value={'role': 'worker'}, new_value={'deleted': True, 'role': 'worker'},

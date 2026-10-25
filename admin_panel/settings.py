@@ -146,6 +146,7 @@ REST_FRAMEWORK = {
         'notifications': '60/min',
         'pqr': '20/min',
         'account': '5/min',
+        'account_check': '10/min',   # público, por IP: login de una cuenta eliminada
         'reminders': '10/min',
         # Panel admin: login por IP (fuerza bruta) y el resto por usuario
         'panel_login': '10/min',

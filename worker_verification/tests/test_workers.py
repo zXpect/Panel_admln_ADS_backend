@@ -1,6 +1,6 @@
 from unittest import mock
 
-from accounts.services.account_service import account_service
+from accounts.services.account_service import account_service, email_key
 from pricing.models import ConfigAuditLog, ServiceCategory
 
 from ..models import SystemConfig
@@ -210,7 +210,7 @@ class WorkerUpdateTests(PanelTestCase):
                                          'worker_phone': '300', 'status': 'pending'})
         with mock.patch.object(account_service, 'firebase', self.fb), \
                 mock.patch.object(account_service, 'notifications') as notifications, \
-                mock.patch('accounts.services.account_service.firebase_auth.delete_user') as delete_user:
+                mock.patch('accounts.services.account_service.firebase_auth.get_user', side_effect=Exception('x')),                 mock.patch('accounts.services.account_service.firebase_auth.delete_user') as delete_user:
             self.assertEqual(self.client.delete(f'{WORKERS}{CARO}/').status_code, 200)
 
         delete_user.assert_called_once_with(CARO)
@@ -219,6 +219,8 @@ class WorkerUpdateTests(PanelTestCase):
         request = self.fb.get_data('requests/r1')
         self.assertEqual((request['status'], request['worker_name']), ('cancelled', 'Usuario eliminado'))
         notifications.notify.assert_called_once()
+        # El login de Caro dirá que el equipo de ADS eliminó su cuenta
+        self.assertEqual(self.fb.get_data(f"deleted_accounts/{email_key('caro@ads.test')}")['deleted_by'], 'admin')
         log = ConfigAuditLog.objects.get(entity='Account', entity_key=CARO)
         self.assertEqual((log.admin, log.new_value['deleted']), (self.admin, True))
 

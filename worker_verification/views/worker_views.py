@@ -4,6 +4,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
 from django.db import transaction
+from accounts.services.account_service import account_service
+from payments.services.service_request_service import ServiceRequestError
+from pricing.models import ConfigAuditLog
 from ..services.worker_service import worker_service
 from ..services.audit_service import audit_service
 from ..serializers import (
@@ -233,7 +236,11 @@ class WorkerViewSet(viewsets.ViewSet):
     def destroy(self, request, pk=None):
         """
         DELETE /api/workers/{id}/
-        Elimina un trabajador
+        Elimina la cuenta completa del trabajador, igual que «Eliminar mi cuenta»
+        en la app (DEF-34): perfil, sesión, archivos y la cuenta de Firebase Auth,
+        para que no pueda volver a iniciar sesión; cancela sus solicitudes que no
+        han iniciado y anonimiza las demás. 409 si tiene un servicio en camino o
+        en progreso. Queda en ConfigAuditLog (entity=Account).
         """
         try:
             # Verificar que existe
@@ -242,14 +249,26 @@ class WorkerViewSet(viewsets.ViewSet):
                     'success': False,
                     'error': 'Trabajador no encontrado'
                 }, status=status.HTTP_404_NOT_FOUND)
-            
-            worker_service.delete_worker(pk)
-            
+
+            with transaction.atomic():
+                account_service.delete_account(pk)
+                ConfigAuditLog.objects.create(
+                    admin=request.user, entity='Account', entity_key=pk,
+                    old_value={'role': 'worker'}, new_value={'deleted': True, 'role': 'worker'},
+                )
+
             return Response({
                 'success': True,
                 'message': 'Trabajador eliminado exitosamente'
             }, status=status.HTTP_200_OK)
-            
+
+        except ServiceRequestError as e:
+            if e.status_code == status.HTTP_409_CONFLICT:
+                return Response({
+                    'success': False,
+                    'error': 'El trabajador tiene un servicio en camino o en progreso; elimínalo cuando termine'
+                }, status=status.HTTP_409_CONFLICT)
+            return Response({'success': False, 'error': e.message}, status=e.status_code)
         except Exception as e:
             logger.error(f"Error deleting worker: {str(e)}")
             return Response({

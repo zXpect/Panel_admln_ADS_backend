@@ -387,26 +387,6 @@ class WorkerService:
             logger.error(f"Error updating worker rating: {str(e)}")
             raise
     
-    def delete_worker(self, worker_id):
-        """
-        Elimina un trabajador
-        
-        Args:
-            worker_id (str): ID del trabajador
-            
-        Returns:
-            bool: True si fue exitoso
-        """
-        try:
-            path = f"{self.WORKERS_PATH}/{worker_id}"
-            self.firebase.delete_data(path)
-            
-            logger.info(f"Worker {worker_id} deleted successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting worker {worker_id}: {str(e)}")
-            raise
-    
     def worker_exists(self, worker_id):
         """
         Verifica si un trabajador existe

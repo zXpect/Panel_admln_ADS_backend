@@ -1,6 +1,7 @@
 from unittest import mock
 
-from pricing.models import ServiceCategory
+from accounts.services.account_service import account_service
+from pricing.models import ConfigAuditLog, ServiceCategory
 
 from ..models import SystemConfig
 from ..services.bulk_worker_service import bulk_worker_service
@@ -203,8 +204,36 @@ class WorkerUpdateTests(PanelTestCase):
         self.assertEqual(self.client.post(f'{WORKERS}{ANA}/add_rating/', {'rating': 6}, format='json').status_code, 400)
 
     def test_delete(self):
-        self.assertEqual(self.client.delete(f'{WORKERS}{CARO}/').status_code, 200)
+        """Elimina la cuenta completa, también la de Firebase Auth, y queda en la auditoría (DEF-34)."""
+        self.fb.set_data(f'Tokens/{CARO}', {'token': 'fcm-caro'})
+        self.fb.set_data('requests/r1', {'worker_id': CARO, 'client_id': CLIENT, 'worker_name': 'Caro Díaz',
+                                         'worker_phone': '300', 'status': 'pending'})
+        with mock.patch.object(account_service, 'firebase', self.fb), \
+                mock.patch.object(account_service, 'notifications') as notifications, \
+                mock.patch('accounts.services.account_service.firebase_auth.delete_user') as delete_user:
+            self.assertEqual(self.client.delete(f'{WORKERS}{CARO}/').status_code, 200)
+
+        delete_user.assert_called_once_with(CARO)
         self.assertIsNone(self.worker(CARO))
+        self.assertIsNone(self.fb.get_data(f'Tokens/{CARO}'))
+        request = self.fb.get_data('requests/r1')
+        self.assertEqual((request['status'], request['worker_name']), ('cancelled', 'Usuario eliminado'))
+        notifications.notify.assert_called_once()
+        log = ConfigAuditLog.objects.get(entity='Account', entity_key=CARO)
+        self.assertEqual((log.admin, log.new_value['deleted']), (self.admin, True))
+
+    def test_delete_with_service_in_progress_is_409(self):
+        self.fb.set_data('requests/r1', {'worker_id': CARO, 'client_id': CLIENT, 'status': 'in_progress'})
+        with mock.patch.object(account_service, 'firebase', self.fb), \
+                mock.patch('accounts.services.account_service.firebase_auth.delete_user') as delete_user:
+            response = self.client.delete(f'{WORKERS}{CARO}/')
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('en camino o en progreso', response.json()['error'])
+        delete_user.assert_not_called()
+        self.assertIsNotNone(self.worker(CARO))
+        self.assertFalse(ConfigAuditLog.objects.exists())
+        self.assertEqual(self.client.delete(f'{WORKERS}no-existe/').status_code, 404)
 
     def test_verification_status_validation(self):
         url = f'{WORKERS}{BETO}/verification_status/'

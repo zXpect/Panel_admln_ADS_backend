@@ -72,6 +72,17 @@ class QuoteTests(RequestFlowTestCase):
         self.assertEqual(request['quote_adjustment_reason_code'], 'dificultad')
         self.assertNotIn('quote_adjustment_reason_text', request)
 
+    def test_any_reason_keeps_an_optional_comment(self):
+        """El cliente ve el detalle además de la etiqueta del motivo (MEJ-01)."""
+        self.quote(price=160000, adjustment_reason_code='materiales',
+                   adjustment_reason_text='  Hace falta cable adicional ')
+        request = self.request_data()
+        self.assertEqual((request['quote_adjustment_reason_code'], request['quote_adjustment_reason_text']),
+                         ('materiales', 'Hace falta cable adicional'))
+        # Solo espacios: sin comentario
+        self.quote(price=160000, adjustment_reason_code='tiempo', adjustment_reason_text='   ')
+        self.assertNotIn('quote_adjustment_reason_text', self.request_data())
+
     def test_other_reason_requires_text(self):
         response = self.quote(price=160000, adjustment_reason_code='otro')
         self.assertEqual(response.status_code, 400)

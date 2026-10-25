@@ -211,10 +211,11 @@ class ServiceRequestService:
             request['quote_status'] = self.QUOTE_QUOTED
             request['quoted_at'] = now
             request['quote_is_adjusted'] = adjusted
-            # Sin ajuste no se guarda motivo; el texto solo acompaña a «otro» (D5)
+            # Sin ajuste no se guarda motivo. El texto es obligatorio con «otro» y un
+            # comentario opcional con los demás (D5, MEJ-01)
             request['quote_adjustment_reason_code'] = reason_code if adjusted else None
             request['quote_adjustment_reason_text'] = (
-                quote['adjustment_reason_text'] if adjusted and reason_code == OTHER_REASON else None)
+                quote['adjustment_reason_text'].strip() or None) if adjusted and reason_code else None
             request['scheduled_at'] = quote['scheduled_at']
             request['estimated_duration_min'] = quote['estimated_duration_min']
             request['last_updated'] = now
@@ -311,7 +312,8 @@ class ServiceRequestService:
             request['requote'] = {
                 'price': price,
                 'reason_code': requote['reason_code'],
-                'reason_text': requote['reason_text'] if requote['reason_code'] == OTHER_REASON else '',
+                # Obligatorio con «otro»; comentario opcional con los demás (MEJ-01)
+                'reason_text': requote['reason_text'].strip(),
                 'status': 'pending',
                 'requested_at': now,
             }

@@ -137,14 +137,25 @@ class CatalogApiTests(PricingApiTestCase):
         self.assertEqual((tasks['destapar-desague-sanitario']['min_cop'],
                           tasks['destapar-desague-sanitario']['max_cop']), (24000, 48000))
 
-    def test_requires_app_token(self):
-        self.assertEqual(self.api(uid=None).get(reverse('pricing:catalog')).status_code, 401)
-        self.assertEqual(self.api(uid='revoked').get(reverse('pricing:catalog')).status_code, 401)
+    def test_public_without_session(self):
+        # DEF-17: el registro del trabajador lo pide antes de crear la cuenta
+        response = self.api(uid=None).get(reverse('pricing:catalog'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(self.tasks(response.json()['data'])), 34)
 
-    def test_panel_jwt_is_not_accepted(self):
+    def test_any_token_is_ignored(self):
+        # Un token vencido o revocado, o el JWT del panel, no lo bloquean
+        self.assertEqual(self.api(uid='revoked').get(reverse('pricing:catalog')).status_code, 200)
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(User.objects.create_user('admin'))}")
-        self.assertEqual(client.get(reverse('pricing:catalog')).status_code, 401)
+        self.assertEqual(client.get(reverse('pricing:catalog')).status_code, 200)
+
+    def test_estimate_still_requires_app_token(self):
+        response = self.api(uid=None).post(
+            reverse('pricing:estimate'),
+            {'service_category': 'plomeria', 'task_items': [{'task': 'destapar-desague-sanitario', 'quantity': 1}]},
+            format='json')
+        self.assertEqual(response.status_code, 401)
 
 
 class EstimateApiTests(PricingApiTestCase):

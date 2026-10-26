@@ -85,6 +85,11 @@ class RequoteTests(AppApiTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.request_data()['requote']['reason_text'], 'Hay que cambiar la tubería completa')
 
+    def test_any_reason_keeps_an_optional_comment(self):
+        """Con un motivo de la lista el comentario es opcional y se guarda (MEJ-01)."""
+        self.assertEqual(self.requote(reason_text=' El muro es de concreto ').status_code, 200)
+        self.assertEqual(self.request_data()['requote']['reason_text'], 'El muro es de concreto')
+
     def test_payment_uses_accepted_requote(self):
         self.requote()
         self.answer(accept=True)

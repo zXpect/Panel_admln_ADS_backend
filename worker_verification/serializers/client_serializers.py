@@ -29,6 +29,9 @@ class ClientListSerializer(serializers.Serializer):
     name = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=100)
     lastName = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=100)
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    # Para la tabla del panel
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    timestamp = serializers.IntegerField(required=False, allow_null=True)
     isActive = serializers.SerializerMethodField()
 
     def get_isActive(self, client):

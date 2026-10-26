@@ -30,6 +30,7 @@ class ServiceRequestCreateTests(AppApiTestCase):
     def setUp(self):
         super().setUp()
         self.fb.update_data(f"User/Trabajadores/{WORKER}", {
+            'lastName': 'Gómez',
             'phone': '3001112233',
             'categories': ['plomeria', 'electricidad'],
             'verificationStatus': {'status': 'approved'},
@@ -58,7 +59,7 @@ class ServiceRequestCreateTests(AppApiTestCase):
         self.assertEqual((request['client_name'], request['client_phone'], request['client_email']),
                          ('Carlos', '3104445566', 'carlos@example.com'))
         self.assertEqual((request['worker_id'], request['worker_name'], request['worker_phone']),
-                         (WORKER, 'Ana', '3001112233'))
+                         (WORKER, 'Ana Gómez', '3001112233'))
         self.assertEqual((request['service_category'], request['service_type']), ('plomeria', 'Plomería'))
         self.assertEqual((request['lat'], request['lng']), (5.3086, -73.8150))
         self.assertEqual(request['task_items'], [

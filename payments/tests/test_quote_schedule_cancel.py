@@ -72,6 +72,17 @@ class QuoteTests(RequestFlowTestCase):
         self.assertEqual(request['quote_adjustment_reason_code'], 'dificultad')
         self.assertNotIn('quote_adjustment_reason_text', request)
 
+    def test_any_reason_keeps_an_optional_comment(self):
+        """El cliente ve el detalle además de la etiqueta del motivo (MEJ-01)."""
+        self.quote(price=160000, adjustment_reason_code='materiales',
+                   adjustment_reason_text='  Hace falta cable adicional ')
+        request = self.request_data()
+        self.assertEqual((request['quote_adjustment_reason_code'], request['quote_adjustment_reason_text']),
+                         ('materiales', 'Hace falta cable adicional'))
+        # Solo espacios: sin comentario
+        self.quote(price=160000, adjustment_reason_code='tiempo', adjustment_reason_text='   ')
+        self.assertNotIn('quote_adjustment_reason_text', self.request_data())
+
     def test_other_reason_requires_text(self):
         response = self.quote(price=160000, adjustment_reason_code='otro')
         self.assertEqual(response.status_code, 400)
@@ -242,6 +253,18 @@ class CancelTests(RequestFlowTestCase):
         request = self.request_data()
         self.assertEqual((request['cancelled_by'], request['cancellation_reason_text']), ('worker', 'Se me dañó la moto'))
         self.assertEqual(self.sent_notifications(), [('fcm-client', 'request_cancelled')])
+
+    def test_cancel_push_carries_reason(self):
+        """El push dice el motivo: la etiqueta de la lista o el texto con «otro» (DEF-27)."""
+        self.set_request(client_name='Emmanuel', worker_name='Breider López')
+        self.cancel(reason_code='horario')
+        self.assertEqual(self.fcm_send.call_args.args[0].data['body'],
+                         'Emmanuel canceló la solicitud. Motivo: Por el horario')
+
+        self.set_request(status='pending')
+        self.cancel(uid=WORKER, reason_code='otro', reason_text='Se me dañó la moto')
+        self.assertEqual(self.fcm_send.call_args.args[0].data['body'],
+                         'Breider López canceló la solicitud. Motivo: Se me dañó la moto')
 
     def test_started_service_answers_409_pqr(self):
         for status in ('on_the_way', 'in_progress', 'completed'):

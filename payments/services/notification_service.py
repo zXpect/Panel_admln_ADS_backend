@@ -6,6 +6,8 @@ from firebase_admin import messaging
 
 from worker_verification.services.firebase_service import firebase_service
 
+from ..serializers.service_request_serializers import CANCELLATION_LABELS, OTHER_REASON
+
 logger = logging.getLogger(__name__)
 
 COLOMBIA_TZ = timezone(timedelta(hours=-5))
@@ -30,10 +32,11 @@ class NotificationService:
     TOKENS_PATH = 'Tokens'
     HISTORY_PATH = 'notifications'
 
+    # Con el nombre del técnico y el mismo tono de los demás avisos (DEF-30)
     STATUS_TEXTS = {
-        'on_the_way': ('¡El trabajador va en camino!', 'El trabajador se dirige a tu ubicación'),
-        'in_progress': ('Trabajo en progreso', 'El trabajador ha comenzado el servicio'),
-        'completed': ('¡Trabajo completado!', 'El servicio ha sido completado. Realiza el pago y califica tu experiencia'),
+        'on_the_way': ('Técnico en camino', '{worker} va en camino a tu dirección'),
+        'in_progress': ('Trabajo en progreso', '{worker} empezó el trabajo'),
+        'completed': ('Trabajo completado', '{worker} terminó el trabajo. Paga y califica el servicio'),
     }
 
     def __init__(self):
@@ -56,27 +59,27 @@ class NotificationService:
 
         if notification_type == 'new_request':
             data.update(
-                title='Nueva Solicitud de Servicio',
+                title='Nueva solicitud de servicio',
                 body=f"Tipo: {request.get('service_type', '')}\nDirección: {request.get('address', '')}",
                 clientId=client_id or '',
             )
             return worker_id, data
 
         if notification_type == 'request_accepted':
-            data.update(title='¡Solicitud Aceptada!', body=f"{worker_name} ha aceptado tu solicitud")
+            data.update(title='¡Solicitud aceptada!', body=f"{worker_name} ha aceptado tu solicitud")
             return client_id, data
 
         if notification_type == 'request_rejected':
             body = 'Tu solicitud no pudo ser atendida'
             if request.get('rejection_reason'):
                 body += f": {request['rejection_reason']}"
-            data.update(title='Solicitud Rechazada', body=body)
+            data.update(title='Solicitud rechazada', body=body)
             return client_id, data
 
         if notification_type == 'status_change':
             status = request.get('status', '')
             title, body = self.STATUS_TEXTS.get(status, ('Actualización de solicitud', 'Tu solicitud ha sido actualizada'))
-            data.update(title=title, body=body, status=status)
+            data.update(title=title, body=body.format(worker=worker_name), status=status)
             return client_id, data
 
         if notification_type == 'quote_received':
@@ -103,12 +106,14 @@ class NotificationService:
             return client_id, data
 
         if notification_type == 'request_cancelled':
-            # Se avisa a la otra parte
+            # Se avisa a la otra parte, con el motivo (DEF-27)
+            reason = cancellation_reason(request)
+            suffix = f". Motivo: {reason}" if reason else ''
             if request.get('cancelled_by') == 'worker':
-                data.update(title='Solicitud cancelada', body=f"{worker_name} canceló la solicitud")
+                data.update(title='Solicitud cancelada', body=f"{worker_name} canceló la solicitud{suffix}")
                 return client_id, data
             client_name = request.get('client_name') or 'El cliente'
-            data.update(title='Solicitud cancelada', body=f"{client_name} canceló la solicitud")
+            data.update(title='Solicitud cancelada', body=f"{client_name} canceló la solicitud{suffix}")
             return worker_id, data
 
         if notification_type == 'requote_received':
@@ -274,6 +279,14 @@ def format_cop(value):
         return '$' + f"{int(value):,}".replace(',', '.')
     except (TypeError, ValueError):
         return '$0'
+
+
+def cancellation_reason(request):
+    """Motivo de la cancelación para el push: el texto con «otro», la etiqueta con los demás."""
+    code = request.get('cancellation_reason_code')
+    if code == OTHER_REASON:
+        return (request.get('cancellation_reason_text') or '').strip() or None
+    return CANCELLATION_LABELS.get(code)
 
 
 def format_schedule(timestamp_ms):

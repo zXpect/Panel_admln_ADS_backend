@@ -195,14 +195,6 @@ class WorkerService:
             if 'password' in worker_data:
                 del worker_data['password']
 
-            # Asegurar tipos correctos para compatibilidad
-            if 'latitude' in worker_data:
-                worker_data['latitude'] = float(worker_data['latitude'])
-            if 'longitude' in worker_data:
-                worker_data['longitude'] = float(worker_data['longitude'])
-            if 'pricePerHour' in worker_data:
-                worker_data['pricePerHour'] = float(worker_data['pricePerHour'])
-
             # Crear perfil en Realtime Database
             path = f"{self.WORKERS_PATH}/{user_id}"
             self.firebase.set_data(path, worker_data)
@@ -393,26 +385,6 @@ class WorkerService:
             return True
         except Exception as e:
             logger.error(f"Error updating worker rating: {str(e)}")
-            raise
-    
-    def delete_worker(self, worker_id):
-        """
-        Elimina un trabajador
-        
-        Args:
-            worker_id (str): ID del trabajador
-            
-        Returns:
-            bool: True si fue exitoso
-        """
-        try:
-            path = f"{self.WORKERS_PATH}/{worker_id}"
-            self.firebase.delete_data(path)
-            
-            logger.info(f"Worker {worker_id} deleted successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting worker {worker_id}: {str(e)}")
             raise
     
     def worker_exists(self, worker_id):

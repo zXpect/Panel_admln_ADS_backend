@@ -56,7 +56,9 @@ class BulkUploadTests(PanelTestCase):
         self.assertEqual((data['total_processed'], data['successful'], data['failed']), (2, 2, 0))
         profile = self.worker('bulk-1')
         # El teléfono queda como texto (la app lo lee como String) y no queda disponible sin documentos
-        self.assertEqual((profile['phone'], profile['work'], profile['isAvailable']), ('3105551234', 'Pintor', False))
+        self.assertEqual((profile['phone'], profile['isAvailable']), ('3105551234', False))
+        # «Pintor» se guarda como el oficio del catálogo, igual que en el registro de la app
+        self.assertEqual((profile['categories'], profile['work']), (['pintura'], 'Pintura'))
         self.assertNotIn('password', profile)
         self.assertEqual(len(data['success_details'][0]['password']), 12)
 
@@ -88,6 +90,50 @@ class BulkUploadTests(PanelTestCase):
         self.assertIn('Columnas faltantes', response.json()['error'])
         self.auth.create_user.assert_not_called()
 
+    def test_categoria_column_takes_several_catalog_categories(self):
+        response = self.upload(excel([
+            row('luis@ads.test', Categoria='Plomería, pintura; Electricista', Precio_por_hora=50000),
+            row('marta@ads.test', Categoria='Ferretería'),
+            row('sara@ads.test', Categoria='plomeria, pintura, electricidad, jardineria'),
+        ]))
+        self.assertEqual(response.status_code, 207)
+        data = response.json()['data']
+        self.assertEqual((data['successful'], data['failed']), (1, 2))
+        profile = self.worker('bulk-1')
+        self.assertEqual(profile['categories'], ['plomeria', 'pintura', 'electricidad'])
+        self.assertNotIn('pricePerHour', profile)
+        errors = [detail['error'] for detail in data['error_details']]
+        self.assertIn('Oficio no válido', errors[0])
+        self.assertIn('Máximo 3 oficios', errors[1])
+        # Las filas con error no crean cuenta en Firebase Auth
+        self.assertEqual(self.auth.create_user.call_count, 1)
+
+    def test_rows_without_required_fields_create_nothing(self):
+        # DEF-27: una fila sin correo creaba una cuenta que no podía iniciar sesión
+        response = self.upload(excel([
+            row('luis@ads.test'),
+            row(None),
+            row('   '),
+            row('sin-arroba.ads.test'),
+            row('marta@ads.test', Nombre=None),
+            row('sara@ads.test', Apellido=''),
+            row('pedro@ads.test', Categoria=None),
+        ]))
+
+        self.assertEqual(response.status_code, 207)
+        data = response.json()['data']
+        self.assertEqual((data['successful'], data['failed']), (1, 6))
+        errors = [detail['error'] for detail in data['error_details']]
+        self.assertEqual(errors[:2], ['Falta el correo', 'Falta el correo'])
+        self.assertIn('Correo no válido', errors[2])
+        self.assertEqual(errors[3:], ['Falta el nombre', 'Falta el apellido', 'Falta el oficio'])
+        self.assertEqual(self.auth.create_user.call_count, 1)
+
+    def test_email_is_trimmed_and_lowercased(self):
+        self.upload(excel([row('  Luis@ADS.test ')]))
+        self.assertEqual(self.auth.create_user.call_args.kwargs['email'], 'luis@ads.test')
+        self.assertEqual(self.worker('bulk-1')['email'], 'luis@ads.test')
+
     def test_auth_error_is_reported_per_row(self):
         self.auth.create_user.side_effect = Exception('cuota excedida')
         response = self.upload(excel([row('luis@ads.test')]))
@@ -100,3 +146,5 @@ class BulkUploadTests(PanelTestCase):
         columns = pd.read_excel(io.BytesIO(response.content)).columns.str.lower()
         for column in ('nombre', 'apellido', 'email', 'telefono', 'categoria'):
             self.assertIn(column, columns)
+        for column in ('precio_por_hora', 'latitud', 'longitud'):
+            self.assertNotIn(column, columns)

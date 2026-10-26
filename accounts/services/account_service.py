@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import time
 
@@ -39,6 +40,11 @@ class AccountService:
     SUSPENDED_REASON = 'Cuenta suspendida'
     SESSION_PATHS = ('Tokens/{uid}', 'active_workers/{uid}', 'WorkerDocuments/{uid}', 'notifications/{uid}')
     STORAGE_PREFIXES = ('worker_documents/{uid}/', 'client_images/{uid}/', 'worker_profiles/profile_{uid}_')
+    # Cuentas eliminadas, por el hash del correo: el login de la app explica que la
+    # cuenta ya no existe en vez de «contraseña incorrecta». Solo lo lee el backend.
+    DELETED_PATH = 'deleted_accounts'
+    DELETED_BY_USER = 'user'
+    DELETED_BY_ADMIN = 'admin'
 
     def __init__(self):
         self.firebase = firebase_service
@@ -132,8 +138,10 @@ class AccountService:
         logger.info(f"Account {uid} ({role}) {'reactivated' if active else 'suspended'}")
         return role, was_active
 
-    def delete_account(self, uid):
+    def delete_account(self, uid, deleted_by=DELETED_BY_USER):
         """
+        deleted_by: 'user' (Eliminar mi cuenta en la app) o 'admin' (panel, DEF-34).
+
         Raises:
             ServiceRequestError: 409 si tiene un servicio en camino o en progreso
         """
@@ -143,6 +151,7 @@ class AccountService:
                 'Tienes un servicio en curso; termínalo antes de eliminar tu cuenta', 409)
 
         self._close_requests(requests, 'Cuenta eliminada', anonymize=True)
+        email = self._email_of(uid)
 
         for template in self.PROFILE_PATHS + self.SESSION_PATHS:
             self.firebase.delete_data(template.format(uid=uid))
@@ -151,12 +160,48 @@ class AccountService:
             for name in self.firebase.list_files_in_folder(prefix.format(uid=uid)):
                 self.firebase.delete_file_from_storage(name)
 
+        if email:
+            self.firebase.set_data(f"{self.DELETED_PATH}/{email_key(email)}",
+                                   {'deleted_by': deleted_by, 'deleted_at': int(time.time() * 1000)})
+
         # Al final: si algo falla antes, el usuario puede reintentar con su sesión
         try:
             firebase_auth.delete_user(uid)
         except firebase_auth.UserNotFoundError:
             pass
-        logger.info(f"Account {uid} deleted ({len(requests)} requests anonymized)")
+        logger.info(f"Account {uid} deleted by {deleted_by} ({len(requests)} requests anonymized)")
+
+    def _email_of(self, uid):
+        """Correo de la cuenta en Firebase Auth o, si no se puede leer, el del perfil."""
+        try:
+            email = firebase_auth.get_user(uid).email
+            if email:
+                return email
+        except Exception:
+            pass
+        _, _, profile = self.find_profile(uid)
+        return (profile or {}).get('email')
+
+    def deletion_of(self, email):
+        """
+        'user' o 'admin' si la cuenta de ese correo fue eliminada, o None. Si el
+        correo volvió a registrarse, el registro ya no aplica y se borra.
+        """
+        path = f"{self.DELETED_PATH}/{email_key(email)}"
+        record = self.firebase.get_data(path)
+        if not isinstance(record, dict):
+            return None
+        try:
+            firebase_auth.get_user_by_email(email.strip().lower())
+            self.firebase.delete_data(path)
+            return None
+        except firebase_auth.UserNotFoundError:
+            return record.get('deleted_by') or self.DELETED_BY_USER
+
+
+def email_key(email):
+    """Clave del correo en deleted_accounts: SHA-256 del correo en minúsculas, sin guardarlo."""
+    return hashlib.sha256(email.strip().lower().encode('utf-8')).hexdigest()
 
 
 account_service = AccountService()

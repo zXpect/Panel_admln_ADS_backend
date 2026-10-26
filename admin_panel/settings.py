@@ -141,10 +141,12 @@ REST_FRAMEWORK = {
         'payments': '30/min',
         'payments_webhook': '120/min',
         'service_requests': '30/min',
+        'catalog': '60/min',   # público, por IP (DEF-17)
         'ratings': '10/min',
         'notifications': '60/min',
         'pqr': '20/min',
         'account': '5/min',
+        'account_check': '10/min',   # público, por IP: login de una cuenta eliminada
         'reminders': '10/min',
         # Panel admin: login por IP (fuerza bruta) y el resto por usuario
         'panel_login': '10/min',

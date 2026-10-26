@@ -1,5 +1,9 @@
 from unittest import mock
 
+from accounts.services.account_service import account_service, email_key
+from pricing.models import ConfigAuditLog, ServiceCategory
+
+from ..models import SystemConfig
 from ..services.bulk_worker_service import bulk_worker_service
 from .base import ANA, BETO, CARO, CLIENT, PanelTestCase
 
@@ -7,8 +11,8 @@ WORKERS = '/api/workers/'
 
 
 def new_worker(**overrides):
-    body = {'name': 'Dora', 'lastName': 'León', 'email': 'Dora@ADS.test', 'work': 'Jardinería',
-            'phone': '310-555-1234', 'latitude': 5.3086, 'longitude': -73.815}
+    body = {'name': 'Dora', 'lastName': 'León', 'email': 'Dora@ADS.test', 'categories': ['jardineria'],
+            'phone': '310-555-1234'}
     body.update(overrides)
     return body
 
@@ -49,6 +53,14 @@ class WorkerQueryTests(PanelTestCase):
         self.assertEqual((response.status_code, response.json()['data']['name']), (200, 'Ana'))
         self.assertEqual(self.client.get(f'{WORKERS}no-existe/').status_code, 404)
 
+    def test_list_includes_categories_and_verification_for_the_table(self):
+        workers = {worker['id']: worker for worker in self.client.get(WORKERS).json()['data']}
+        self.assertEqual(workers[ANA]['categories'], ['plomeria'])
+        self.assertEqual(workers[ANA]['verificationStatus']['status'], 'approved')
+        self.assertEqual(workers[BETO]['verificationStatus']['status'], 'documents_submitted')
+        # Sin oficios ni verificación: lista vacía y null
+        self.assertEqual((workers[CARO]['categories'], workers[CARO]['verificationStatus']), ([], None))
+
     def test_statistics(self):
         data = self.client.get(f'{WORKERS}statistics/').json()['data']
         self.assertEqual((data['total'], data['available'], data['online']), (3, 2, 1))
@@ -81,6 +93,33 @@ class WorkerCreateTests(PanelTestCase):
                          ('dora@ads.test', '3105551234', True, 0.0))
         self.assertNotIn('password', stored)
         self.assertEqual(self.auth_call.args, ('dora@ads.test', '', 'Dora León'))
+        # Como el registro de la app: oficios del catálogo y `work` con el primero
+        self.assertEqual((stored['categories'], stored['work']), (['jardineria'], 'Jardinería'))
+
+    def test_categories_follow_the_catalog_and_the_limit(self):
+        # Acepta slug, nombre o el valor viejo de `work`, sin repetir; sin precio ni ubicación
+        response = self.create(categories=['Plomero', 'pintura', 'Plomería'], pricePerHour=50000, latitude=5.3)
+        self.assertEqual(response.status_code, 201)
+        stored = self.worker('new-uid')
+        self.assertEqual((stored['categories'], stored['work']), (['plomeria', 'pintura'], 'Plomería'))
+        self.assertNotIn('pricePerHour', stored)
+        self.assertNotIn('latitude', stored)
+
+    def test_invalid_categories_are_refused(self):
+        ServiceCategory.objects.filter(slug='cerrajeria').update(is_active=False)
+        cases = {
+            'vacío': [], 'no es oficio': ['ferreteria'], 'inactivo': ['cerrajeria'],
+            'más de 3': ['plomeria', 'pintura', 'electricidad', 'jardineria'],
+        }
+        for label, categories in cases.items():
+            with self.subTest(label):
+                response = self.create(categories=categories)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('categories', response.json()['errors'])
+        self.assertIsNone(self.worker('new-uid'))
+        # El máximo sale de SystemConfig (worker_max_categories)
+        SystemConfig.objects.filter(key='worker_max_categories').update(value='4')
+        self.assertEqual(self.create(categories=cases['más de 3']).status_code, 201)
 
     def test_existing_auth_user_without_profile_gets_one(self):
         response = self.create(auth_result=('old-uid', None, 'Usuario ya existe en Firebase Auth'))
@@ -99,7 +138,7 @@ class WorkerCreateTests(PanelTestCase):
         self.assertIsNone(self.worker(CLIENT))
 
     def test_validation_and_auth_errors(self):
-        for overrides in ({'email': 'no-es-correo'}, {'phone': '12'}, {'latitude': 91}, {'name': ''}):
+        for overrides in ({'email': 'no-es-correo'}, {'phone': '12'}, {'categories': None}, {'name': ''}):
             with self.subTest(overrides=overrides):
                 self.assertEqual(self.create(**overrides).status_code, 400)
         self.assertEqual(self.create(auth_result=(None, None, 'cuota excedida')).status_code, 400)
@@ -117,6 +156,17 @@ class WorkerUpdateTests(PanelTestCase):
         # Antes el PUT dejaba rating y totalRatings en 0 y volvía a poner isAvailable en true
         self.assertEqual((ana['rating'], ana['totalRatings'], ana['isOnline']), (4.5, 2, True))
         self.assertEqual(self.worker(CARO)['isAvailable'], False)
+
+    def test_put_updates_categories_but_not_price_or_location(self):
+        response = self.client.put(f'{WORKERS}{CARO}/', {'categories': ['pintura', 'carpinteria'],
+                                                         'pricePerHour': 9, 'latitude': 1}, format='json')
+        self.assertEqual(response.status_code, 200)
+        caro = self.worker(CARO)
+        self.assertEqual((caro['categories'], caro['work']), (['pintura', 'carpinteria'], 'Pintura'))
+        self.assertNotIn('pricePerHour', caro)
+        self.assertNotEqual(caro.get('latitude'), 1)
+        response = self.client.patch(f'{WORKERS}{CARO}/', {'categories': ['ferreteria']}, format='json')
+        self.assertEqual(response.status_code, 400)
 
     def test_patch(self):
         self.assertEqual(self.client.patch(f'{WORKERS}{BETO}/', {'phone': '3200000000'}, format='json').status_code, 200)
@@ -154,8 +204,38 @@ class WorkerUpdateTests(PanelTestCase):
         self.assertEqual(self.client.post(f'{WORKERS}{ANA}/add_rating/', {'rating': 6}, format='json').status_code, 400)
 
     def test_delete(self):
-        self.assertEqual(self.client.delete(f'{WORKERS}{CARO}/').status_code, 200)
+        """Elimina la cuenta completa, también la de Firebase Auth, y queda en la auditoría (DEF-34)."""
+        self.fb.set_data(f'Tokens/{CARO}', {'token': 'fcm-caro'})
+        self.fb.set_data('requests/r1', {'worker_id': CARO, 'client_id': CLIENT, 'worker_name': 'Caro Díaz',
+                                         'worker_phone': '300', 'status': 'pending'})
+        with mock.patch.object(account_service, 'firebase', self.fb), \
+                mock.patch.object(account_service, 'notifications') as notifications, \
+                mock.patch('accounts.services.account_service.firebase_auth.get_user', side_effect=Exception('x')),                 mock.patch('accounts.services.account_service.firebase_auth.delete_user') as delete_user:
+            self.assertEqual(self.client.delete(f'{WORKERS}{CARO}/').status_code, 200)
+
+        delete_user.assert_called_once_with(CARO)
         self.assertIsNone(self.worker(CARO))
+        self.assertIsNone(self.fb.get_data(f'Tokens/{CARO}'))
+        request = self.fb.get_data('requests/r1')
+        self.assertEqual((request['status'], request['worker_name']), ('cancelled', 'Usuario eliminado'))
+        notifications.notify.assert_called_once()
+        # El login de Caro dirá que el equipo de ADS eliminó su cuenta
+        self.assertEqual(self.fb.get_data(f"deleted_accounts/{email_key('caro@ads.test')}")['deleted_by'], 'admin')
+        log = ConfigAuditLog.objects.get(entity='Account', entity_key=CARO)
+        self.assertEqual((log.admin, log.new_value['deleted']), (self.admin, True))
+
+    def test_delete_with_service_in_progress_is_409(self):
+        self.fb.set_data('requests/r1', {'worker_id': CARO, 'client_id': CLIENT, 'status': 'in_progress'})
+        with mock.patch.object(account_service, 'firebase', self.fb), \
+                mock.patch('accounts.services.account_service.firebase_auth.delete_user') as delete_user:
+            response = self.client.delete(f'{WORKERS}{CARO}/')
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('en camino o en progreso', response.json()['error'])
+        delete_user.assert_not_called()
+        self.assertIsNotNone(self.worker(CARO))
+        self.assertFalse(ConfigAuditLog.objects.exists())
+        self.assertEqual(self.client.delete(f'{WORKERS}no-existe/').status_code, 404)
 
     def test_verification_status_validation(self):
         url = f'{WORKERS}{BETO}/verification_status/'

@@ -1,7 +1,9 @@
 import pandas as pd
+import re
 import secrets
 import string
 from datetime import datetime
+from pricing.services.worker_categories import resolve_worker_categories
 from firebase_admin import auth
 from .firebase_service import firebase_service
 import logging
@@ -14,10 +16,15 @@ class BulkWorkerUploadService:
     Servicio para carga masiva de trabajadores desde Excel
     """
     
+    EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
     WORKERS_PATH = 'User/Trabajadores'
     CLIENTS_PATH = 'User/Clientes'
     
-    # Mapeo de columnas Excel a campos del modelo
+    # Mapeo de columnas Excel a campos del modelo. `categoria` admite hasta
+    # `worker_max_categories` oficios separados por coma y se convierte en
+    # `categories` + `work`, como en el registro de la app. Ya no hay columnas de
+    # precio (sale del catálogo) ni de ubicación (la escribe la app); si vienen, se ignoran.
     EXCEL_COLUMN_MAPPING = {
         'nombre': 'name',
         'apellido': 'lastName',
@@ -25,9 +32,6 @@ class BulkWorkerUploadService:
         'telefono': 'phone',
         'categoria': 'work',
         'descripcion': 'description',
-        'latitud': 'latitude',
-        'longitud': 'longitude',
-        'precio_por_hora': 'pricePerHour',
         'experiencia': 'experience',
         'contraseña': 'password',  # Opcional
     }
@@ -89,8 +93,6 @@ class BulkWorkerUploadService:
                 if pd.isna(value):
                     if excel_col in ['descripcion', 'experiencia', 'contraseña']:
                         worker_data[model_field] = ''
-                    elif excel_col in ['latitud', 'longitud', 'precio_por_hora']:
-                        worker_data[model_field] = 0.0
                     elif excel_col == 'telefono':
                         worker_data[model_field] = ''
                 else:
@@ -110,7 +112,24 @@ class BulkWorkerUploadService:
         worker_data.setdefault('rating', 0.0)
         worker_data.setdefault('totalRatings', 0)
         worker_data.setdefault('phone', '')  # ✅ Asegurar que phone sea string vacío si no existe
-        
+
+        # Obligatorios por fila (DEF-27): antes una fila sin correo creaba una cuenta que no
+        # podía iniciar sesión. El ValueError deja la fila con error sin crear nada.
+        for field, label in (('name', 'nombre'), ('lastName', 'apellido'), ('email', 'correo')):
+            value = worker_data.get(field)
+            worker_data[field] = '' if value is None or pd.isna(value) else str(value).strip()
+            if not worker_data[field]:
+                raise ValueError(f"Falta el {label}")
+        worker_data['email'] = worker_data['email'].lower()
+        if not self.EMAIL_PATTERN.match(worker_data['email']):
+            raise ValueError(f"Correo no válido: {worker_data['email']}")
+
+        # Oficios del catálogo; un valor inválido o de más lanza ValueError y la fila queda con error
+        work = '' if pd.isna(worker_data.get('work')) else str(worker_data.get('work', ''))
+        if not work.strip():
+            raise ValueError("Falta el oficio")
+        worker_data['categories'], worker_data['work'] = resolve_worker_categories(re.split(r'[,;]', work))
+
         # ✅ CORREGIDO: timestamp como LONG (milisegundos) para compatibilidad con Android
         worker_data.setdefault('timestamp', self.get_current_timestamp_millis())
         
@@ -175,12 +194,6 @@ class BulkWorkerUploadService:
             
             # ✅ IMPORTANTE: Asegurar que todos los campos NUMÉRICOS sean del tipo correcto
             # Convertir explícitamente a tipos nativos de Python (no numpy)
-            if 'latitude' in worker_data:
-                worker_data['latitude'] = float(worker_data['latitude'])
-            if 'longitude' in worker_data:
-                worker_data['longitude'] = float(worker_data['longitude'])
-            if 'pricePerHour' in worker_data:
-                worker_data['pricePerHour'] = float(worker_data['pricePerHour'])
             if 'rating' in worker_data:
                 worker_data['rating'] = float(worker_data['rating'])
             if 'totalRatings' in worker_data:
@@ -318,10 +331,15 @@ class BulkWorkerUploadService:
                     
                 except Exception as e:
                     results['failed'] += 1
+                    # Una celda vacía llega como NaN, que no se puede enviar en JSON
+                    def cell(column):
+                        value = row.get(column, '')
+                        return '' if pd.isna(value) else str(value).strip()
+
                     results['error_details'].append({
                         'row': row_number,
-                        'email': row.get('email', 'N/A'),
-                        'name': f"{row.get('nombre', '')} {row.get('apellido', '')}",
+                        'email': cell('email'),
+                        'name': f"{cell('nombre')} {cell('apellido')}".strip(),
                         'error': str(e)
                     })
             
@@ -345,11 +363,9 @@ class BulkWorkerUploadService:
             'apellido': ['Pérez', 'García', 'López'],
             'email': ['juan.perez@example.com', 'maria.garcia@example.com', 'pedro.lopez@example.com'],
             'telefono': ['3001234567', '3109876543', '3157654321'],
-            'categoria': ['Electricista', 'Plomero', 'Carpintero'],
+            # Hasta 3 oficios del catálogo, separados por coma
+            'categoria': ['Electricidad', 'Plomería, Pintura', 'Carpintería'],
             'descripcion': ['Electricista con 10 años de experiencia', '', 'Carpintero especializado en muebles'],
-            'latitud': [4.7110, 0.0, 4.6097],
-            'longitud': [-74.0721, 0.0, -74.0817],
-            'precio_por_hora': [50000, 45000, 60000],
             'experiencia': ['10 años', '5 años', '8 años'],
             'contraseña': ['', '', ''],  # Opcional - se autogenera si está vacío
         }

@@ -1,952 +1,698 @@
-# Worker Verification Admin Panel
+# ADS - API Backend
 
-Panel de administración para gestión y verificación de trabajadores, documentos y clientes utilizando Django REST Framework y Firebase.
+API REST del sistema ADS, una plataforma que conecta a clientes con trabajadores
+independientes de reparaciones locativas (hogar y comercio) en Ubaté,
+Cundinamarca. Este servicio, construido con Django y Django REST Framework,
+atiende dos clientes:
 
-## Tabla de Contenidos
+- **Panel de administración web** (React): verificación documental de
+  trabajadores, gestión de clientes, catálogo de servicios, parámetros de
+  cotización, pagos, PQR y estadísticas. Se autentica con JWT.
+- **Aplicación móvil Android**: creación de solicitudes, cotización, pagos,
+  calificación, PQR y notificaciones push. Se autentica con el ID token de
+  Firebase.
 
-- [Características](#características)
-- [Tecnologías](#tecnologías)
-- [Requisitos Previos](#requisitos-previos)
-- [Instalación](#instalación)
-- [Configuración](#configuración)
-- [Uso](#uso)
-- [API Endpoints](#api-endpoints)
-- [Estructura del Proyecto](#estructura-del-proyecto)
-- [Modelos de Datos](#modelos-de-datos)
-- [Servicios](#servicios)
-- [Seguridad](#seguridad)
-- [Logging](#logging)
-- [Despliegue en Render](#despliegue-en-render)
-- [Contribuir](#contribuir)
+Los datos de dominio (trabajadores, clientes, solicitudes y documentos) viven en
+Firebase Realtime Database y Firebase Storage; la base de datos relacional guarda
+las cuentas del panel, el libro de pagos, las PQR, el catálogo de tarifas, la
+configuración del sistema y la auditoría.
 
-## Características
+## Tabla de contenido
 
-- 🔐 Autenticación JWT con Simple JWT
-- 👷 Gestión completa de trabajadores
-- 📄 Sistema de verificación de documentos
-- 👥 Administración de clientes
-- 📊 Dashboard con estadísticas en tiempo real
-- 🔥 Integración completa con Firebase (Realtime Database & Storage)
-- 🌍 CORS configurado para desarrollo y producción
-- 📝 Logging detallado
-- ✅ Validación de datos con serializers
+1. [Funcionalidades](#funcionalidades)
+2. [Arquitectura](#arquitectura)
+3. [Tecnologías](#tecnologías)
+4. [Estructura del proyecto](#estructura-del-proyecto)
+5. [Requisitos](#requisitos)
+6. [Instalación](#instalación)
+7. [Configuración](#configuración)
+8. [Ejecución](#ejecución)
+9. [Autenticación](#autenticación)
+10. [Referencia de la API](#referencia-de-la-api)
+11. [Formato de respuestas y errores](#formato-de-respuestas-y-errores)
+12. [Límites de peticiones](#límites-de-peticiones)
+13. [Modelo de datos](#modelo-de-datos)
+14. [Pasarela de pagos](#pasarela-de-pagos)
+15. [Reglas de seguridad de Firebase](#reglas-de-seguridad-de-firebase)
+16. [Pruebas](#pruebas)
+17. [Comandos de gestión](#comandos-de-gestión)
+18. [Despliegue](#despliegue)
+19. [Seguridad](#seguridad)
+20. [Contribución](#contribución)
+21. [Licencia](#licencia)
+
+## Funcionalidades
+
+- Autenticación del panel con JWT (access y refresh token, rotación y lista negra).
+- Gestión de trabajadores: consulta, edición, estado de verificación,
+  disponibilidad, ubicación y estadísticas.
+- Carga masiva de trabajadores desde un archivo Excel con plantilla descargable.
+- Verificación documental: revisión, aprobación y rechazo de hoja de vida,
+  antecedentes judiciales, títulos y cartas de recomendación, con registro de
+  auditoría por cada decisión.
+- Consulta de clientes y suspensión o reactivación de cuentas.
+- Tablero con estadísticas generales y tendencias semanales y mensuales.
+- Catálogo de oficios y tareas con rangos de precio de referencia ajustados a
+  Ubaté, y parámetros de cotización editables con historial de cambios.
+- Ciclo de vida de la solicitud de servicio: creación, cotización, aceptación o
+  rechazo, reprogramación, cancelación con motivo y una única re-cotización.
+- Pagos en línea mediante Wompi (o una pasarela simulada en desarrollo) y
+  registro de pagos en efectivo.
+- Calificación del servicio por parte del cliente.
+- Peticiones, quejas y reclamos (PQR) con plazo de respuesta de 15 días hábiles.
+- Notificaciones push (Firebase Cloud Messaging) enviadas desde el servidor y
+  recordatorios programados.
+- Eliminación de la cuenta del usuario y de sus datos personales.
+
+## Arquitectura
+
+```
++---------------------+        JWT        +-------------------------+
+| Panel admin (React) | ----------------> |                         |
++---------------------+                   |   API Django (este repo) | ---> PostgreSQL / SQLite
+                                          |                         |
++---------------------+  ID token Firebase|                         | ---> Wompi (pagos)
+| App Android (Java)  | ----------------> |                         |
++---------------------+                   +-------------------------+
+          |                                            |
+          |      SDK de Firebase (lectura/escritura)   |  SDK Admin de Firebase
+          v                                            v
+   +--------------------------------------------------------------+
+   |  Firebase: Authentication, Realtime Database, Storage, FCM    |
+   +--------------------------------------------------------------+
+```
+
+La aplicación móvil lee y escribe la mayor parte de sus datos directamente en
+Firebase, protegida por las reglas de seguridad de `firebase/`. Las operaciones
+que esas reglas reservan al servidor (cotización, pagos, calificación,
+notificaciones y eliminación de cuenta) pasan por esta API.
 
 ## Tecnologías
 
-- **Backend**: Django 5.0, Django REST Framework
-- **Base de Datos**: Firebase Realtime Database
-- **Almacenamiento**: Firebase Storage
-- **Autenticación**: JWT (Simple JWT)
-- **Base de Datos Local**: SQLite (para usuarios de Django)
-- **Lenguaje**: Python 3.11
+| Componente | Tecnología |
+|---|---|
+| Lenguaje | Python 3.11 |
+| Framework | Django 5.0, Django REST Framework 3.14 |
+| Autenticación | djangorestframework-simplejwt 5.3 (panel), Firebase ID token (app) |
+| Datos de dominio | Firebase Realtime Database y Storage (firebase-admin 6.4) |
+| Base de datos relacional | PostgreSQL en producción, SQLite en desarrollo |
+| Pagos | Wompi (Web Checkout) y pasarela simulada para desarrollo |
+| Procesamiento de Excel | pandas, openpyxl, xlrd |
+| Servidor de producción | Gunicorn y WhiteNoise sobre Render |
 
-## Requisitos Previos
+## Estructura del proyecto
 
-- Python 3.11 (con 3.13 o 3.14 falla la instalación: `Pillow==10.2.0` y `pandas==2.2.0` no tienen paquetes para esas versiones)
-- pip (gestor de paquetes de Python)
-- Cuenta de Firebase con proyecto configurado
-- Credenciales de Firebase (archivo JSON)
+```
+backend/
+├── admin_panel/            Configuración del proyecto (settings, urls, wsgi)
+├── worker_verification/    Trabajadores, documentos, clientes, tablero y carga masiva
+│   ├── views/              Vistas y ViewSets de DRF
+│   ├── serializers/        Validación de entrada y salida
+│   ├── services/           Lógica de negocio y acceso a Firebase
+│   └── tests/              Pruebas con un Firebase simulado en memoria
+├── pricing/                Catálogo de oficios y tareas, estimados y configuración
+├── payments/               Solicitudes de servicio, cotización, pagos, calificación,
+│                           notificaciones y recordatorios
+├── pqr/                    Peticiones, quejas y reclamos
+├── accounts/               Eliminación de cuenta, estadísticas del trabajador y
+│                           suspensión de cuentas
+├── firebase/               Reglas de Realtime Database y Storage con sus pruebas
+├── .github/workflows/      Disparo programado de recordatorios
+├── manage.py
+├── requirements.txt
+└── render.yaml             Blueprint de despliegue en Render
+```
+
+Cada aplicación de Django sigue la misma organización en capas: `views/`
+recibe la petición, `serializers/` valida los datos y `services/` contiene la
+lógica de negocio.
+
+## Requisitos
+
+- Python 3.11. Con Python 3.13 o superior la instalación falla porque algunas
+  dependencias fijadas (Pillow 10.2 y pandas 2.2) no publican paquetes para esas
+  versiones.
+- pip.
+- Un proyecto de Firebase con Realtime Database, Storage y Authentication
+  habilitados, y una clave de cuenta de servicio en formato JSON.
+- Node.js 20 y Firebase CLI, solo para ejecutar las pruebas de las reglas de
+  Firebase.
 
 ## Instalación
 
-### 1. Clonar el repositorio
+1. Clonar el repositorio:
 
-```bash
-git clone -b develop https://github.com/zXpect/Panel_admln_ADS_backend.git
-cd Panel_admln_ADS_backend
-```
+   ```bash
+   git clone https://github.com/zXpect/Panel_admln_ADS_backend.git
+   cd Panel_admln_ADS_backend
+   ```
 
-### 2. Crear entorno virtual
+2. Crear y activar un entorno virtual:
 
-```bash
-python -m venv venv
-# En Windows con varias versiones instaladas: py -3.11 -m venv venv
+   ```bash
+   python -m venv venv
+   ```
 
-# En Windows
-venv\Scripts\activate
+   En Windows (con varias versiones de Python instaladas, usar `py -3.11 -m venv venv`):
 
-# En Linux/Mac
-source venv/bin/activate
-```
+   ```bash
+   venv\Scripts\activate
+   ```
 
-### 3. Instalar dependencias
+   En Linux o macOS:
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   source venv/bin/activate
+   ```
 
-**Dependencias principales:**
-```
-Django>=5.0
-djangorestframework
-django-cors-headers
-djangorestframework-simplejwt
-firebase-admin
-python-decouple
-```
+3. Instalar las dependencias:
 
-### 4. Migraciones de base de datos
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-python manage.py makemigrations
-python manage.py migrate
-```
+4. Crear el archivo de entorno a partir de la plantilla y completar sus valores
+   (ver [Configuración](#configuración)):
 
-### 5. Crear superusuario
+   ```bash
+   cp .env.example .env
+   ```
 
-```bash
-python manage.py createsuperuser
-```
+5. Copiar la clave de cuenta de servicio de Firebase en esta carpeta con el
+   nombre `serviceAccountKey.json` (Consola de Firebase > Configuración del
+   proyecto > Cuentas de servicio > Generar nueva clave privada).
+
+6. Aplicar las migraciones. Incluyen la carga inicial del catálogo de oficios y
+   tareas y de los parámetros del sistema:
+
+   ```bash
+   python manage.py migrate
+   ```
+
+7. Crear el usuario administrador con el que se ingresa al panel:
+
+   ```bash
+   python manage.py createsuperuser
+   ```
 
 ## Configuración
 
-### 1. Variables de Entorno
+La configuración se lee de variables de entorno o del archivo `.env`. Las
+plantillas `.env.example`, `.env.payments.example` y `.env.production.example`
+documentan cada variable.
 
-Copiar la plantilla y llenar los valores (todas las claves están comentadas en
-`.env.example`; las del módulo de pagos, en `.env.payments.example`):
+| Variable | Descripción | Ejemplo |
+|---|---|---|
+| `SECRET_KEY` | Clave secreta de Django. Obligatoria en producción. | Valor aleatorio |
+| `DEBUG` | Modo de depuración. | `True` |
+| `DJANGO_ENV` | `development` o `production`. En producción activa HTTPS obligatorio, cookies seguras y HSTS. | `development` |
+| `ALLOWED_HOSTS` | Hosts permitidos, separados por coma. Para el emulador de Android agregar `10.0.2.2`. | `localhost,127.0.0.1,10.0.2.2` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes permitidos para el panel web. | `http://localhost:3000` |
+| `DATABASE_URL` | Cadena de conexión a PostgreSQL. Si no se define, se usa SQLite. | `postgres://...` |
+| `FIREBASE_CREDENTIALS_PATH` | Ruta a la clave de cuenta de servicio. | `serviceAccountKey.json` |
+| `FIREBASE_DATABASE_URL` | URL de Realtime Database. | `https://<proyecto>-default-rtdb.firebaseio.com` |
+| `FIREBASE_STORAGE_BUCKET` | Bucket de Storage. | `<proyecto>.firebasestorage.app` |
+| `PAGOS_MODO` | Pasarela de pagos: `mock` o `wompi`. | `mock` |
+| `MOCK_EVENTS_SECRET`, `MOCK_INTEGRITY_SECRET` | Secretos de la pasarela simulada. | Valores aleatorios |
+| `MOCK_CHECKOUT_BASE_URL` | URL con la que el teléfono llega al backend en desarrollo. | `http://10.0.2.2:8000` |
+| `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY` | Llaves de Wompi. | `pub_test_...`, `prv_test_...` |
+| `WOMPI_EVENTS_SECRET`, `WOMPI_INTEGRITY_SECRET` | Secretos de eventos e integridad de Wompi. | `test_events_...` |
+| `WOMPI_BASE_URL` | API de Wompi (Sandbox o producción). | `https://sandbox.wompi.co/v1` |
+| `REMINDERS_TOKEN` | Secreto de la ruta de recordatorios. Vacío deshabilita la ruta. | Valor aleatorio |
 
-```bash
-cp .env.example .env
-```
+El archivo `.env` y la clave de Firebase están excluidos del control de
+versiones y nunca deben publicarse.
 
-No subir nunca el `.env` ni la llave de Firebase: ambos están en `.gitignore`.
+## Ejecución
 
-### 2. Configuración de Firebase
-
-1. Ir a Firebase Console
-2. Crear o seleccionar proyecto
-3. Ir a Configuración del proyecto > Cuentas de servicio
-4. Generar nueva clave privada
-5. Descargar el archivo JSON
-6. Guardar como `serviceAccountKey.json` en `backend/` (o cambiar `FIREBASE_CREDENTIALS_PATH`)
-
-### 3. Estructura de Firebase Database
-
-```
-Firebase Realtime Database:
-├── User/
-│   ├── Trabajadores/
-│   │   └── {workerId}/
-│   │       ├── name
-│   │       ├── lastName
-│   │       ├── email
-│   │       ├── work
-│   │       ├── isAvailable
-│   │       ├── isOnline
-│   │       ├── latitude
-│   │       ├── longitude
-│   │       ├── rating
-│   │       ├── totalRatings
-│   │       └── verificationStatus/
-│   │           ├── status
-│   │           └── submittedAt
-│   └── Clientes/
-│       └── {clientId}/
-│           ├── name
-│           ├── lastName
-│           └── email
-└── WorkerDocuments/
-    └── {workerId}/
-        ├── hojaDeVida/
-        │   ├── id
-        │   ├── fileUrl
-        │   ├── status
-        │   └── uploadedAt
-        ├── antecedentesJudiciales/
-        │   ├── id
-        │   ├── fileUrl
-        │   ├── status
-        │   └── uploadedAt
-        └── certificaciones/
-            ├── titulos/
-            │   └── {tituloId}/
-            └── cartasRecomendacion/
-                └── {cartaId}/
-```
-
-## Uso
-
-### Iniciar servidor de desarrollo
+Iniciar el servidor de desarrollo:
 
 ```bash
 python manage.py runserver
 ```
 
-El servidor estará disponible en: `http://localhost:8000`
+La API queda disponible en `http://localhost:8000/api/` y el administrador de
+Django en `http://localhost:8000/admin/`. Para que un teléfono físico en la
+misma red acceda al servidor:
 
-### Acceder al admin de Django
-
+```bash
+python manage.py runserver 0.0.0.0:8000
 ```
-URL: http://localhost:8000/admin/
-Usuario: (el creado con createsuperuser)
+
+Comprobación de estado:
+
+```bash
+curl http://localhost:8000/api/health/
 ```
 
-## API Endpoints
+Respuesta esperada: `{"status": "ok"}`.
 
-### Autenticación
+## Autenticación
 
-#### Obtener Token JWT
+La API usa dos esquemas, ambos con el encabezado `Authorization: Bearer <token>`:
+
+| Cliente | Token | Cómo se obtiene |
+|---|---|---|
+| Panel de administración | JWT de simplejwt (HS256). Access de 5 horas, refresh de 1 día, con rotación y lista negra. | `POST /api/auth/token/` con usuario y contraseña de Django |
+| Aplicación móvil | ID token de Firebase Authentication (RS256). | SDK de Firebase en el dispositivo |
+
+Ejemplo de inicio de sesión del panel:
+
 ```http
 POST /api/auth/token/
 Content-Type: application/json
 
 {
   "username": "admin",
-  "password": "password"
-}
-
-Response:
-{
-  "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+  "password": "********"
 }
 ```
 
-#### Refrescar Token
+```json
+{
+  "access": "eyJ0eXAiOiJKV1QiLCJhbGciOi...",
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOi..."
+}
+```
+
+Renovación del token:
+
 ```http
 POST /api/auth/token/refresh/
 Content-Type: application/json
 
 {
-  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc..."
+  "refresh": "eyJ0eXAiOiJKV1QiLCJhbGciOi..."
 }
 ```
+
+## Referencia de la API
+
+Todas las rutas comienzan con `/api/`. La columna "Acceso" indica quién puede
+llamar cada ruta: **Panel** (JWT), **App** (ID token de Firebase), **Pública**
+(sin autenticación) o un mecanismo propio.
+
+### Sistema y autenticación
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `GET` | `/api/health/` | Pública | Estado del servicio |
+| `POST` | `/api/auth/token/` | Pública | Inicio de sesión del panel; devuelve `access` y `refresh` |
+| `POST` | `/api/auth/token/refresh/` | Pública | Renueva el token de acceso |
 
 ### Trabajadores
 
-#### Listar Trabajadores
-```http
-GET /api/workers/
-Authorization: Bearer {token}
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `GET` | `/api/workers/` | Panel | Lista paginada. Filtros: `category`, `available`, `online`, `search` |
+| `GET` | `/api/workers/{id}/` | Panel | Detalle del trabajador |
+| `POST` | `/api/workers/` | Panel | Crea un trabajador |
+| `PUT` / `PATCH` | `/api/workers/{id}/` | Panel | Actualiza el trabajador completo o campos puntuales |
+| `DELETE` | `/api/workers/{id}/` | Panel | Elimina el trabajador y su cuenta de Firebase Authentication |
+| `GET` | `/api/workers/statistics/` | Panel | Totales, disponibles, en línea y conteo por oficio |
+| `PATCH` | `/api/workers/{id}/verification_status/` | Panel | Cambia el estado de verificación: `documents_submitted`, `approved` o `rejected`. Queda auditado |
+| `PATCH` | `/api/workers/{id}/availability/` | Panel | `{"isAvailable": true}` |
+| `PATCH` | `/api/workers/{id}/online_status/` | Panel | `{"isOnline": true}` |
+| `PATCH` | `/api/workers/{id}/location/` | Panel | `{"latitude": 5.3085, "longitude": -73.8164}` |
+| `POST` | `/api/workers/{id}/add_rating/` | Panel | Agrega una calificación al promedio |
+| `GET` | `/api/workers/{id}/stats/` | App | Trabajos completados, calificación promedio y número de calificaciones |
+| `POST` | `/api/workers/bulk-upload/` | Panel | Carga masiva desde Excel (`multipart/form-data`). Cada fila exige nombre, apellido, correo válido y oficio |
+| `GET` | `/api/workers/bulk-upload-template/` | Panel | Descarga la plantilla de Excel |
 
-Query Parameters:
-- category: Filtrar por categoría
-- available: true/false
-- online: true/false
-- search: término de búsqueda
+### Documentos de verificación
 
-Response:
-{
-  "success": true,
-  "count": 10,
-  "data": [...]
-}
-```
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `GET` | `/api/documents/pending/` | Panel | Documentos pendientes de revisión |
+| `GET` | `/api/documents/worker/{workerId}/` | Panel | Todos los documentos de un trabajador |
+| `GET` | `/api/documents/worker/{workerId}/hoja-vida/` | Panel | Hoja de vida |
+| `GET` | `/api/documents/worker/{workerId}/antecedentes/` | Panel | Antecedentes judiciales |
+| `GET` | `/api/documents/worker/{workerId}/titulos/` | Panel | Títulos académicos |
+| `GET` | `/api/documents/worker/{workerId}/cartas/` | Panel | Cartas de recomendación |
+| `GET` | `/api/documents/worker/{workerId}/check-requirements/` | Panel | Indica si el trabajador cumple los documentos mínimos |
+| `POST` | `/api/documents/` | Panel | Registra un documento |
+| `POST` | `/api/documents/approve/` | Panel | Aprueba un documento |
+| `POST` | `/api/documents/reject/` | Panel | Rechaza un documento con motivo |
+| `DELETE` | `/api/documents/delete/` | Panel | Elimina un documento |
+| `GET` | `/api/documents/file-url/` | Panel | URL firmada del archivo. Parámetros: `workerId`, `category`, `filename` |
 
-#### Obtener Trabajador
-```http
-GET /api/workers/{id}/
-Authorization: Bearer {token}
-```
+Ejemplo de aprobación. El revisor se toma del usuario autenticado, no del
+cuerpo de la petición:
 
-#### Crear Trabajador
-```http
-POST /api/workers/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "id": "worker123",
-  "name": "Juan",
-  "lastName": "Pérez",
-  "email": "juan@example.com",
-  "work": "Plomero",
-  "phone": "3001234567",
-  "pricePerHour": 25000,
-  "latitude": 5.34851,
-  "longitude": -73.902605
-}
-```
-
-#### Actualizar Trabajador
-```http
-PATCH /api/workers/{id}/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "name": "Juan Carlos",
-  "pricePerHour": 30000
-}
-```
-
-#### Actualizar Disponibilidad
-```http
-PATCH /api/workers/{id}/availability/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "isAvailable": true
-}
-```
-
-#### Actualizar Estado de Verificación
-```http
-PATCH /api/workers/{id}/verification_status/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "status": "approved"
-}
-
-Valores permitidos: "documents_submitted", "approved", "rejected"
-```
-
-#### Actualizar Estado en Línea
-```http
-PATCH /api/workers/{id}/online_status/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "isOnline": true
-}
-```
-
-#### Actualizar Ubicación
-```http
-PATCH /api/workers/{id}/location/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "latitude": 5.34851,
-  "longitude": -73.902605
-}
-```
-
-#### Agregar Calificación
-```http
-POST /api/workers/{id}/add_rating/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "rating": 4.5
-}
-```
-
-#### Obtener Estadísticas
-```http
-GET /api/workers/statistics/
-Authorization: Bearer {token}
-
-Response:
-{
-  "success": true,
-  "data": {
-    "total": 100,
-    "available": 75,
-    "online": 20,
-    "by_category": {
-      "Plomero": 30,
-      "Electricista": 25,
-      "Carpintero": 45
-    }
-  }
-}
-```
-
-#### Eliminar Trabajador
-```http
-DELETE /api/workers/{id}/
-Authorization: Bearer {token}
-```
-
-### Documentos
-
-#### Documentos Pendientes
-```http
-GET /api/documents/pending/
-Authorization: Bearer {token}
-
-Response:
-{
-  "success": true,
-  "count": 5,
-  "data": [...]
-}
-```
-
-#### Documentos por Trabajador
-```http
-GET /api/documents/worker/{workerId}/
-Authorization: Bearer {token}
-```
-
-#### Hoja de Vida
-```http
-GET /api/documents/worker/{workerId}/hoja-vida/
-Authorization: Bearer {token}
-```
-
-#### Antecedentes Judiciales
-```http
-GET /api/documents/worker/{workerId}/antecedentes/
-Authorization: Bearer {token}
-```
-
-#### Títulos
-```http
-GET /api/documents/worker/{workerId}/titulos/
-Authorization: Bearer {token}
-```
-
-#### Cartas de Recomendación
-```http
-GET /api/documents/worker/{workerId}/cartas/
-Authorization: Bearer {token}
-```
-
-#### Crear Documento
-```http
-POST /api/documents/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "id": "doc123",
-  "workerId": "worker123",
-  "documentType": "hoja_de_vida",
-  "category": "hojaDeVida",
-  "fileName": "cv.pdf",
-  "fileUrl": "https://storage.googleapis.com/...",
-  "fileType": "application/pdf",
-  "fileSize": 204800
-}
-```
-
-#### Aprobar Documento
 ```http
 POST /api/documents/approve/
-Authorization: Bearer {token}
+Authorization: Bearer <access>
 Content-Type: application/json
 
 {
-  "workerId": "worker123",
-  "category": "hojaDeVida",
-  "subcategory": null,
-  "documentId": "doc123",
-  "reviewerId": "admin123"
-}
-```
-
-#### Rechazar Documento
-```http
-POST /api/documents/reject/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "workerId": "worker123",
-  "category": "hojaDeVida",
-  "subcategory": null,
-  "documentId": "doc123",
-  "reviewerId": "admin123",
-  "reason": "El documento no es legible"
-}
-```
-
-#### Verificar Documentos Requeridos
-```http
-GET /api/documents/worker/{workerId}/check-requirements/
-Authorization: Bearer {token}
-
-Response:
-{
-  "success": true,
-  "data": {
-    "hasHojaVida": true,
-    "hasAntecedentes": true,
-    "hasTitulo": false,
-    "cartasCount": 3,
-    "hasMinimumCartas": true,
-    "isComplete": true
-  }
-}
-```
-
-#### Eliminar Documento
-```http
-DELETE /api/documents/delete/
-Authorization: Bearer {token}
-Content-Type: application/json
-
-{
-  "workerId": "worker123",
+  "workerId": "uid_trabajador",
   "category": "hojaDeVida",
   "subcategory": null,
   "documentId": "doc123"
 }
 ```
 
-#### Obtener URL de Archivo
-```http
-GET /api/documents/file-url/?workerId=xxx&category=xxx&filename=xxx
-Authorization: Bearer {token}
+El rechazo usa el mismo cuerpo con el campo adicional `"reason"`. Un trabajador
+cumple los requisitos cuando tiene hoja de vida, antecedentes judiciales y un
+título académico o al menos tres cartas de recomendación.
 
-Response:
-{
-  "success": true,
-  "url": "https://storage.googleapis.com/..."
-}
-```
+### Clientes y cuentas
 
-### Clientes
-
-#### Listar Clientes
-```http
-GET /api/clients/
-Authorization: Bearer {token}
-
-Query Parameters:
-- search: término de búsqueda
-
-Response:
-{
-  "success": true,
-  "count": 50,
-  "data": [...]
-}
-```
-
-#### Obtener Cliente
-```http
-GET /api/clients/{id}/
-Authorization: Bearer {token}
-```
-
-#### Contar Clientes
-```http
-GET /api/clients/count/
-Authorization: Bearer {token}
-
-Response:
-{
-  "success": true,
-  "count": 50
-}
-```
-
-### Dashboard
-
-#### Estadísticas Generales
-```http
-GET /api/dashboard/stats/
-Authorization: Bearer {token}
-
-Response:
-{
-  "success": true,
-  "data": {
-    "workers": {
-      "total": 100,
-      "available": 75,
-      "online": 20,
-      "byCategory": {
-        "Plomero": 30,
-        "Electricista": 25
-      }
-    },
-    "clients": {
-      "total": 50
-    },
-    "documents": {
-      "pendingTotal": 15,
-      "pendingByType": {
-        "hojaDeVida": 5,
-        "antecedentesJudiciales": 4,
-        "titulos": 3,
-        "cartasRecomendacion": 3
-      }
-    }
-  }
-}
-```
-
-### Pagos, cotización y API de la app móvil
-
-App `payments/`. Los endpoints de la app móvil se autentican con el **ID token
-de Firebase** (`Authorization: Bearer <idToken>`, RS256); los del panel, con el
-JWT de `/api/auth/token/`. Todos tienen límite de peticiones (`429` al excederlo).
-La pasarela se elige con `PAGOS_MODO` (`mock` | `wompi`); ver `.env.payments.example`.
-
-Flujo: el trabajador cotiza → el cliente acepta y elige el método de pago
-(`digital` o `cash`) → el servicio avanza hasta `completed` → el cliente paga
-en Wompi, o el trabajador registra el efectivo → el cliente califica.
-
-| Método | Ruta | Quién | Qué hace |
+| Método | Ruta | Acceso | Descripción |
 |---|---|---|---|
-| `GET` | `/api/requests/quote-limits/?service_type=X` | App | Rango de precio permitido (COP) |
-| `POST` | `/api/requests/{id}/quote/` | App (trabajador) | `{"quoted_price": 85000}` en COP enteros. Si la solicitud estaba `pending`, pasa a `accepted` |
-| `POST` | `/api/requests/{id}/quote/accept/` | App (cliente) | `{"payment_method": "digital\|cash"}`. Acepta la cotización; queda inmutable |
-| `POST` | `/api/requests/{id}/requote/` | App (trabajador) | `{"price": 165000, "reason_code": "dificultad", "reason_text": ""}`. Una sola re-cotización por servicio, en `on_the_way` o `in_progress` (D7). Mientras esté pendiente, el trabajador no puede marcar `completed` |
-| `POST` | `/api/requests/{id}/requote/accept/` · `requote/reject/` | App (cliente) | Al aceptar, `quoted_price` pasa al nuevo precio; al rechazar, se conserva el original |
-| `POST` | `/api/requests/{id}/payment-method/` | App (cliente) | `{"payment_method": "digital\|cash"}`; cambia el método hasta que el servicio termina |
-| `POST` | `/api/requests/{id}/cash-received/` | App (trabajador) | «Recibí el pago»: crea un `Payment` con `gateway = cash` en `APPROVED`, deja `payment_status = approved` y avisa al cliente |
-| `POST` | `/api/requests/{id}/quote/reject/` | App (cliente) | `{"reason": "..."}`; el trabajador puede volver a cotizar |
-| `POST` | `/api/payments/` | App (cliente) | `{"service_request_id": "...", "redirect_url": "adsapp://..."}` → `reference`, `checkout_url`. El monto lo calcula el servidor (cotización aceptada); un pago abierto de menos de 30 min se reutiliza |
-| `GET` | `/api/payments/{reference}/` | App (cliente/trabajador) o panel | Estado del pago; el panel ve además el historial de eventos |
-| `GET` | `/api/payments/?status=&gateway=&service_request_id=&date_from=&date_to=` | Panel | Listado paginado con `summary` (pagos aprobados: cantidad y total en COP, en general y por pasarela) |
-| `GET` | `/api/admin/catalog/` | Panel | Oficios y tareas, incluidos los inactivos, con la referencia sin factor regional |
-| `PATCH` | `/api/admin/catalog/categories/{id}/` | Panel | `name`, `order`, `is_active` (el slug no cambia) |
-| `POST` · `PATCH` | `/api/admin/catalog/tasks/` · `tasks/{id}/` | Panel | Crear o editar tareas; no se borran, se desactivan |
-| `GET` · `PATCH` | `/api/admin/config/` · `config/{key}/` | Panel | Parámetros de cotización y búsqueda, con formato y rango validados |
-| `GET` | `/api/admin/audit/?entity=` | Panel | Historial de `ConfigAuditLog` (cada cambio del panel queda ahí con su administrador) |
-| `POST` | `/api/requests/{id}/rating/` | App (cliente) | `{"rating": 1-5, "comment": "..."}`; requiere el servicio pagado (digital o efectivo registrado). Recalcula el promedio del trabajador |
-| `POST` | `/api/notifications/` | App | `{"request_id": "...", "type": "new_request\|request_accepted\|request_rejected\|status_change"}`. FCM desde el backend; el servidor decide destinatario y texto |
-| `POST` | `/api/payments/webhook/` | Pasarela | Eventos de Wompi/mock; se autentica por checksum |
-| `GET/POST` | `/api/payments/mock-checkout/{reference}/` | Navegador | Checkout simulado (solo `PAGOS_MODO=mock`) |
+| `GET` | `/api/clients/` | Panel | Lista paginada. Filtro: `search` |
+| `GET` | `/api/clients/{id}/` | Panel | Detalle del cliente |
+| `GET` | `/api/clients/count/` | Panel | Total de clientes |
+| `PATCH` | `/api/admin/accounts/{uid}/status/` | Panel | Suspende o reactiva una cuenta de cliente o trabajador. Queda auditado |
+| `POST` | `/api/accounts/deleted-status/` | Pública | `{"email": "..."}`. Indica si la cuenta de ese correo fue eliminada y por quién (panel o usuario); la app lo consulta cuando falla el inicio de sesión |
+| `DELETE` | `/api/me/` | App | Elimina la cuenta del usuario autenticado y sus datos personales. Responde `204`, o `409` si tiene un servicio en curso |
 
-**PQR** (app `pqr/`, B11). `POST /api/pqr/` (app; solo el cliente o el
-trabajador de la solicitud, el rol lo pone el servidor), `GET /api/pqr/` (app:
-las propias; panel: todas, `?status=`), `GET /api/pqr/{id}/` y
-`PATCH /api/pqr/{id}/` (panel: `{"status": "en_tramite|cerrada", "response": "..."}`;
-cerrar exige respuesta y una PQR cerrada ya no cambia). El plazo `due_at` es de
-15 días hábiles en hora de Colombia, sin fines de semana ni festivos
-(`pqr/services/business_days.py`). Al responder se avisa al autor con el tipo
-`pqr_answered`, que también queda en `notifications/<uid>`.
+### Tablero
 
-**Perfil del trabajador** (B12). `GET /api/workers/{id}/stats/` (app) →
-`completed_jobs` (solicitudes `completed`, calificadas o no), `rating` y
-`total_ratings`. No hay contador en Firebase: la app marca `completed`
-directamente, así que se cuenta al consultar.
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `GET` | `/api/dashboard/stats/` | Panel | Totales de trabajadores, clientes y documentos pendientes |
+| `GET` | `/api/dashboard/weekly-trends/` | Panel | Tendencias de la semana |
+| `GET` | `/api/dashboard/monthly-trends/` | Panel | Tendencias del mes |
+| `GET` | `/api/dashboard/activity-stats/` | Panel | Estadísticas de actividad |
 
-**Eliminar mi cuenta** (app `accounts/`, D18). `DELETE /api/me/` → `204`.
-Borra el perfil, `Tokens`, `active_workers`, `WorkerDocuments`,
-`notifications` y los archivos del usuario en Storage, cancela sus solicitudes
-`pending`/`accepted` (avisa a la otra parte), anonimiza el contacto en las
-demás y, al final, elimina la cuenta de Firebase Auth. Con un servicio
-`on_the_way`/`in_progress` responde `409`. `Payment` y `PQR` conservan solo el uid.
+### Catálogo, estimados y configuración
 
-Errores: `{"success": false, "error": "..."}` (o `"errors"` de validación) con
-`400` datos inválidos, `401` sin token válido, `403` no es el participante
-correcto, `404` no existe, `409` el estado de la solicitud no lo permite.
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `GET` | `/api/catalog/` | Pública | Oficios y tareas activos con el rango de precio para Ubaté |
+| `POST` | `/api/requests/estimate/` | App | Precio de referencia de las tareas elegidas; no crea la solicitud |
+| `GET` | `/api/admin/catalog/` | Panel | Oficios y tareas, incluidos los inactivos |
+| `PATCH` | `/api/admin/catalog/categories/{id}/` | Panel | Cambia nombre, orden o estado de un oficio |
+| `POST` | `/api/admin/catalog/tasks/` | Panel | Crea una tarea |
+| `PATCH` | `/api/admin/catalog/tasks/{id}/` | Panel | Edita o desactiva una tarea (las tareas no se eliminan) |
+| `GET` | `/api/admin/config/` | Panel | Parámetros de cotización y búsqueda |
+| `PATCH` | `/api/admin/config/{key}/` | Panel | Cambia un parámetro, con validación de formato y rango |
+| `GET` | `/api/admin/audit/` | Panel | Historial de cambios. Filtro: `entity` |
 
-Rangos de precio configurables en el admin de Django (`SystemConfig`):
-`quote_min_price_cop` (por defecto 1000), `quote_max_price_cop` (por defecto
-5000000) y `quote_price_ranges` (JSON por tipo de servicio, p. ej.
-`{"Plomería": {"min": 30000, "max": 800000}}`).
+Los precios se redondean a la centena con redondeo aritmético y nunca quedan
+por debajo de la tarifa mínima por visita.
 
-En Firebase, `requests/{id}` gana los campos `quoted_price`, `quote_status`
-(`quoted`/`accepted`/`rejected`), `payment_status`
-(`pending`/`approved`/`declined`/`error`/`voided`) y `payment_reference`, que
-solo escribe el backend (ver `firebase/README.md`).
+### Solicitudes de servicio
 
-Pruebas manuales del mock: `python manage.py mock_payment <request_id> <monto_cop>`.
+Todas las rutas de esta sección son de la aplicación móvil. El servidor valida
+que quien llama sea el cliente o el trabajador de la solicitud y que el estado
+de la solicitud permita la operación.
 
-**Wompi (`PAGOS_MODO=wompi`).** `WompiGateway` arma la URL del Web Checkout
-(`https://checkout.wompi.co/p/`) con la firma de integridad, y verifica los
-eventos con `WOMPI_EVENTS_SECRET`, igual que el mock. Antes de cerrar un pago
-pendiente vencido consulta la transacción en Wompi con la llave privada
-(`GET /transactions?reference=`): si ya está aprobada la aplica (evento
-`local.reconciled`) y no deja abrir otro pago; si sigue en proceso, la reutiliza.
-En el panel de Wompi, la URL de eventos debe ser `https://<host>/api/payments/webhook/`.
+| Método | Ruta | Quién | Descripción |
+|---|---|---|---|
+| `POST` | `/api/requests/` | Cliente | Crea la solicitud con tareas, dirección y coordenadas; congela el precio de referencia y notifica al trabajador |
+| `GET` | `/api/requests/quote-limits/` | Ambos | Tarifa mínima y tope de cotización. Parámetro: `service_type` |
+| `POST` | `/api/requests/{id}/quote/` | Trabajador | Envía la cotización con motivo de ajuste y agenda |
+| `POST` | `/api/requests/{id}/quote/accept/` | Cliente | Acepta la cotización y elige el método de pago (`digital` o `cash`) |
+| `POST` | `/api/requests/{id}/quote/reject/` | Cliente | Rechaza la cotización; el trabajador puede volver a cotizar |
+| `POST` | `/api/requests/{id}/schedule/` | Trabajador | Reprograma la visita y avisa al cliente |
+| `POST` | `/api/requests/{id}/cancel/` | Ambos | Cancela con un motivo de la lista; el cliente solo antes de "en camino" |
+| `POST` | `/api/requests/{id}/requote/` | Trabajador | Re-cotiza una sola vez, con el servicio en camino o en progreso |
+| `POST` | `/api/requests/{id}/requote/accept/` | Cliente | Acepta la re-cotización; cambia el precio |
+| `POST` | `/api/requests/{id}/requote/reject/` | Cliente | Rechaza la re-cotización; se conserva el precio original |
+| `POST` | `/api/requests/{id}/payment-method/` | Cliente | Cambia el método de pago antes de terminar el servicio |
+| `POST` | `/api/requests/{id}/cash-received/` | Trabajador | Registra el pago en efectivo y avisa al cliente |
+| `POST` | `/api/requests/{id}/rating/` | Cliente | Califica de 1 a 5 un servicio pagado; recalcula el promedio del trabajador |
+| `POST` | `/api/notifications/` | Ambos | Envía una notificación push a la otra parte. El servidor decide destinatario y texto |
 
-## Estructura del Proyecto
+Estados del servicio: `pending`, `accepted`, `on_the_way`, `in_progress`,
+`completed` y `cancelled`. Ejemplo de cotización:
 
-```
-admin_panel/
-├── admin_panel/
-│   ├── __init__.py
-│   ├── settings.py          # Configuración del proyecto
-│   ├── urls.py              # URLs principales
-│   ├── wsgi.py
-│   └── asgi.py
-├── worker_verification/
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── apps.py
-│   ├── models.py            # Modelos Django
-│   ├── urls.py              # URLs de la app
-│   ├── views/
-│   │   ├── __init__.py
-│   │   ├── worker_views.py  # Vistas de trabajadores
-│   │   ├── document_views.py # Vistas de documentos
-│   │   ├── client_views.py   # Vistas de clientes
-│   │   └── dashboard_views.py # Vistas de dashboard
-│   ├── serializers/
-│   │   ├── __init__.py
-│   │   ├── worker_serializers.py
-│   │   ├── document_serializers.py
-│   │   └── client_serializers.py
-│   ├── services/
-│   │   ├── __init__.py
-│   │   ├── firebase_service.py   # Servicio base Firebase
-│   │   ├── worker_service.py     # Lógica de trabajadores
-│   │   ├── document_service.py   # Lógica de documentos
-│   │   └── client_service.py     # Lógica de clientes
-│   └── migrations/
-├── logs/                    # Archivos de log
-├── media/                   # Archivos media
-├── staticfiles/            # Archivos estáticos
-├── manage.py
-├── requirements.txt
-├── .env                    # Variables de entorno
-├── firebase-credentials.json
-└── README.md
-```
+```http
+POST /api/requests/{id}/quote/
+Authorization: Bearer <id_token_firebase>
+Content-Type: application/json
 
-## Modelos de Datos
-
-### VerificationLog
-
-Registra el historial de verificaciones de documentos.
-
-```python
 {
-    "worker_id": "worker123",
-    "document_type": "hoja_de_vida",
-    "action": "approved",  # approved, rejected, pending
-    "reviewer": User,
-    "reason": "Opcional",
-    "created_at": datetime
+  "quoted_price": 85000,
+  "adjustment_reason_code": "materiales",
+  "adjustment_reason_text": "",
+  "scheduled_at": 1793782800000,
+  "estimated_duration_min": 90
 }
 ```
 
-### SystemConfig
+Los precios se expresan en pesos colombianos enteros. `scheduled_at` es la
+fecha y hora de llegada en milisegundos desde 1970 (UTC), futura y dentro de
+los próximos 30 días. Motivos de ajuste: `materiales`, `dificultad`, `tiempo`,
+`condiciones_lugar` y `otro` (este último exige texto).
 
-Almacena configuraciones del sistema.
+### Pagos
 
-```python
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `POST` | `/api/payments/` | App (cliente) | Inicia el pago de una solicitud. Devuelve `reference` y `checkout_url`. El monto lo calcula el servidor a partir de la cotización aceptada |
+| `GET` | `/api/payments/` | Panel | Lista paginada con resumen de pagos aprobados. Filtros: `status`, `gateway`, `service_request_id`, `date_from`, `date_to` |
+| `GET` | `/api/payments/{reference}/` | App o Panel | Estado del pago; el panel ve además el historial de eventos |
+| `POST` | `/api/payments/webhook/` | Pasarela | Eventos de Wompi; se autentica por checksum |
+| `GET` | `/api/payments/return/` | Navegador | Retorno del checkout; abre la aplicación (`adsapp://`) |
+| `GET` / `POST` | `/api/payments/mock-checkout/{reference}/` | Navegador | Checkout simulado (solo con `PAGOS_MODO=mock`) |
+
+Ejemplo:
+
+```http
+POST /api/payments/
+Authorization: Bearer <id_token_firebase>
+Content-Type: application/json
+
 {
-    "key": "max_file_size",
-    "value": "10485760",
-    "description": "Tamaño máximo de archivo en bytes",
-    "updated_at": datetime
+  "service_request_id": "-Nabc123",
+  "redirect_url": "adsapp://payment-result"
 }
 ```
 
-## Servicios
+### PQR
 
-### FirebaseService
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `POST` | `/api/pqr/` | App | Registra una PQR sobre una solicitud propia |
+| `GET` | `/api/pqr/` | App o Panel | La app ve las propias; el panel ve todas. Filtro: `status` (`abierta`, `en_tramite`, `cerrada`) |
+| `GET` | `/api/pqr/{id}/` | App o Panel | Detalle |
+| `PATCH` | `/api/pqr/{id}/` | Panel | Pasa a trámite o cierra con respuesta; avisa al autor |
 
-Servicio base que maneja todas las operaciones con Firebase:
-- Conexión a Realtime Database
-- Operaciones CRUD
-- Gestión de Storage
-- Generación de URLs firmadas
+El plazo de respuesta se calcula en 15 días hábiles en hora de Colombia,
+excluyendo fines de semana y festivos.
 
-### WorkerService
+### Tareas internas
 
-Gestiona operaciones de trabajadores:
-- CRUD completo
-- Búsquedas y filtros
-- Actualización de estado
-- Estadísticas
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| `POST` | `/api/internal/reminders/` | `REMINDERS_TOKEN` | Envía los recordatorios pendientes: servicio próximo, cotización sin responder y pago pendiente |
 
-### DocumentService
+## Formato de respuestas y errores
 
-Maneja la gestión de documentos:
-- Carga de documentos
-- Verificación de requisitos
-- Aprobación/Rechazo
-- Gestión de archivos en Storage
+Las respuestas exitosas siguen la forma:
 
-### ClientService
-
-Administra operaciones de clientes:
-- Listado y búsqueda
-- Obtención de detalles
-- Conteo
-
-## Seguridad
-
-### Autenticación JWT
-
-- Access token válido por 5 horas
-- Refresh token válido por 1 día
-- Algoritmo HS256
-- Blacklist después de rotación
-
-### CORS
-
-Configurado para aceptar peticiones desde:
-- http://localhost:3000
-- http://127.0.0.1:3000
-
-### Validaciones
-
-- Validación de tipos de archivo permitidos
-- Validación de tamaño máximo (10MB)
-- Validación de datos con serializers
-- Sanitización de inputs
-
-## Logging
-
-El sistema registra eventos en:
-
-**Archivo**: `logs/debug.log`
-
-**Niveles**:
-- DEBUG: Información detallada
-- INFO: Confirmación de operaciones
-- WARNING: Advertencias
-- ERROR: Errores capturados
-
-**Formato**:
-```
-INFO 2025-01-20 10:30:45 worker_service Retrieved 100 workers
-ERROR 2025-01-20 10:31:12 document_service Error approving document: File not found
+```json
+{
+  "success": true,
+  "data": { },
+  "count": 20
+}
 ```
 
-## Despliegue en Render
+`count` aparece en los listados. La paginación es por número de página, con 20
+elementos por página (`?page=2`).
 
-Decisión D23: Render con PostgreSQL. `render.yaml` es un Blueprint con la API
-(gunicorn) y la base `ads-db`; la variable `DATABASE_URL` hace que Django use
-PostgreSQL (sin ella usa SQLite local). Con `DJANGO_ENV=production` se activan
-HTTPS obligatorio, cookies seguras, HSTS, estáticos con WhiteNoise y caché en
-la base para el throttling; el backend no arranca sin `SECRET_KEY` propia ni
-con `PAGOS_MODO=mock`.
+Los errores siguen la forma:
 
-1. En Render: **New → Blueprint** y elegir este repositorio (rama `develop` o `main`).
-2. Llenar las variables marcadas `sync: false` (ver `.env.production.example`):
-   las dos de Firebase y las cuatro llaves Sandbox de Wompi. El dominio de
-   Render entra solo en `ALLOWED_HOSTS` y `CSRF_TRUSTED_ORIGINS`
-   (`RENDER_EXTERNAL_HOSTNAME`); `CORS_ALLOWED_ORIGINS` se agrega cuando el
-   panel React tenga URL.
-3. En el servicio `ads-api` → **Environment → Secret Files**, subir
-   `serviceAccountKey.json` (queda en `/etc/secrets/serviceAccountKey.json`).
-4. Desplegar. El build instala, ejecuta `collectstatic`, `migrate` y
-   `createcachetable`. Comprobar `https://<host>/api/health/` → `{"status": "ok"}`.
-5. Crear el usuario del panel: **Shell** del servicio → `python manage.py createsuperuser`.
-6. En el panel de Wompi Sandbox, URL de eventos: `https://<host>/api/payments/webhook/`.
-7. Pasar la URL pública a la app (`ADS_API_BASE_URL_RELEASE`) y al panel.
-8. Recordatorios (HU-17): Render gratuito no tiene tareas programadas, así que
-   los dispara GitHub Actions cada 30 minutos (`.github/workflows/reminders.yml`).
-   Copiar el valor de `REMINDERS_TOKEN` (Render lo genera; **Environment** de
-   `ads-api`) y crear en GitHub → **Settings → Secrets and variables → Actions**
-   los secretos `REMINDERS_TOKEN` (ese valor) y `ADS_API_URL`
-   (`https://<host>`). GitHub solo corre los workflows programados desde la rama
-   por defecto (`main`). Para probarlo a mano: **Actions → Recordatorios → Run
-   workflow**, o `python manage.py send_reminders` desde la Shell del servicio.
+```json
+{
+  "success": false,
+  "error": "Descripción del error"
+}
+```
 
-La base gratuita vence a los 30 días: antes, cambiarla al plan pago más
-pequeño (D23). El plan gratuito del servicio se duerme sin tráfico; la primera
-petición después tarda unos segundos.
+Los errores de validación devuelven `"errors"` con el detalle por campo.
 
-## Testing
+| Código | Significado |
+|---|---|
+| `400` | Datos inválidos |
+| `401` | Token ausente, vencido o inválido |
+| `403` | El usuario no tiene permiso sobre el recurso (por ejemplo, no es participante de la solicitud) |
+| `404` | El recurso no existe |
+| `409` | El estado actual de la solicitud no permite la operación |
+| `429` | Se superó el límite de peticiones |
+
+## Límites de peticiones
+
+Todas las vistas aplican límites por ámbito (`ScopedRateThrottle`):
+
+| Ámbito | Límite | Aplica a |
+|---|---|---|
+| `panel_login` | 10 por minuto, por IP | Inicio de sesión del panel |
+| `panel` | 300 por minuto, por usuario | Rutas del panel |
+| `catalog` | 60 por minuto, por IP | Catálogo público |
+| `service_requests` | 30 por minuto | Solicitudes y estimados |
+| `payments` | 30 por minuto | Pagos |
+| `payments_webhook` | 120 por minuto | Webhook de la pasarela |
+| `ratings` | 10 por minuto | Calificaciones |
+| `notifications` | 60 por minuto | Notificaciones |
+| `pqr` | 20 por minuto | PQR |
+| `account` | 5 por minuto | Eliminación de cuenta |
+| `account_check` | 10 por minuto, por IP | Consulta de cuenta eliminada |
+| `reminders` | 10 por minuto | Recordatorios |
+
+## Modelo de datos
+
+### Firebase Realtime Database
+
+```
+User/
+├── Trabajadores/{uid}     Perfil, oficios (categories), disponibilidad,
+│                          ubicación, calificación y verificationStatus
+└── Clientes/{uid}         Perfil del cliente
+requests/{id}              Solicitud de servicio: tareas, estado, cotización
+                           (quoted_price, quote_status) y pago
+                           (payment_status, payment_reference)
+WorkerDocuments/{uid}/     hojaDeVida, antecedentesJudiciales y
+                           certificaciones (titulos, cartasRecomendacion)
+Tokens/{uid}               Token FCM del dispositivo
+notifications/{uid}        Bandeja de notificaciones del usuario
+active_workers/            Índice geográfico (GeoFire) de trabajadores conectados
+```
+
+Los campos de cotización y pago de `requests/{id}` solo los escribe el backend;
+las reglas de Firebase impiden que la aplicación los modifique.
+
+### Base de datos relacional
+
+| Aplicación | Modelos |
+|---|---|
+| `worker_verification` | `VerificationLog` (auditoría de verificación), `SystemConfig` (parámetros del sistema) |
+| `pricing` | `ServiceCategory`, `Task`, `ConfigAuditLog` |
+| `payments` | `Payment`, `PaymentEvent` |
+| `pqr` | `PQR` |
+| Django | `auth.User` (cuentas del panel) |
+
+## Pasarela de pagos
+
+La pasarela se selecciona con `PAGOS_MODO`:
+
+- `mock`: pasarela simulada que replica la firma de integridad, los estados y
+  los eventos de Wompi. Sirve para desarrollo y pruebas, y no puede iniciarse
+  con `DJANGO_ENV=production`.
+- `wompi`: integración con el Web Checkout de Wompi. Los eventos se verifican
+  con `WOMPI_EVENTS_SECRET` y, antes de cerrar un pago pendiente vencido, se
+  consulta la transacción en Wompi para conciliarla.
+
+Flujo: el trabajador cotiza, el cliente acepta y elige el método de pago, el
+servicio avanza hasta `completed`, el cliente paga en Wompi o el trabajador
+registra el efectivo, y finalmente el cliente califica. El estado del pago se
+refleja en `requests/{id}/payment_status` de Firebase.
+
+En el panel de Wompi, la URL de eventos debe ser
+`https://<host>/api/payments/webhook/`.
+
+## Reglas de seguridad de Firebase
+
+La carpeta `firebase/` contiene las reglas de Realtime Database y Storage que
+usa la aplicación móvil, junto con sus pruebas contra el emulador oficial. Las
+reglas de Realtime Database se generan con `build_rules.py`; los archivos
+`.json` no se editan a mano. Ver `firebase/README.md` para el detalle.
 
 ```bash
-# Ejecutar tests
-python manage.py test
+cd firebase
+npm install
+npm test
+```
 
-# Con cobertura
-coverage run --source='.' manage.py test
+## Pruebas
+
+Ejecutar todas las pruebas del backend:
+
+```bash
+python manage.py test
+```
+
+Por aplicación:
+
+```bash
+python manage.py test worker_verification
+python manage.py test payments
+python manage.py test pricing
+python manage.py test pqr
+python manage.py test accounts
+```
+
+Las pruebas no requieren conexión con Firebase: usan un Firebase simulado en
+memoria. Para medir la cobertura:
+
+```bash
+coverage run manage.py test
 coverage report
 ```
 
-## Documentación Adicional
+## Comandos de gestión
 
-### Reglas de Documentos Requeridos
+| Comando | Descripción |
+|---|---|
+| `python manage.py send_reminders` | Envía los recordatorios pendientes |
+| `python manage.py mock_payment <request_id> <monto_cop>` | Simula un pago con la pasarela de desarrollo |
+| `python manage.py migrate_worker_categories` | Migra el oficio único de los trabajadores al campo de oficios múltiples |
+| `python manage.py createsuperuser` | Crea un usuario del panel |
 
-Un trabajador está **completamente verificado** cuando:
-1. ✅ Tiene Hoja de Vida (obligatorio)
-2. ✅ Tiene Antecedentes Judiciales (obligatorio)
-3. ✅ Tiene Título académico O al menos 3 cartas de recomendación
+## Despliegue
 
-### Estados de Documentos
+El archivo `render.yaml` define un Blueprint de Render con el servicio web de la
+API (Gunicorn) y una base de datos PostgreSQL.
 
-- `pending`: Documento cargado, esperando revisión
-- `approved`: Documento aprobado por revisor
-- `rejected`: Documento rechazado con razón
+1. En Render, crear un Blueprint (**New > Blueprint**) a partir de este repositorio.
+2. Completar las variables marcadas como `sync: false`: `FIREBASE_DATABASE_URL`,
+   `FIREBASE_STORAGE_BUCKET` y las cuatro llaves de Wompi. El dominio de Render se
+   agrega solo a `ALLOWED_HOSTS` y `CSRF_TRUSTED_ORIGINS`.
+3. En **Environment > Secret Files** del servicio, subir `serviceAccountKey.json`
+   (queda en `/etc/secrets/serviceAccountKey.json`).
+4. Desplegar. La compilación instala las dependencias y ejecuta `collectstatic`,
+   `migrate` y `createcachetable`.
+5. Verificar `https://<host>/api/health/`.
+6. Crear el usuario del panel desde la consola del servicio con
+   `python manage.py createsuperuser`.
+7. Agregar la URL del panel web a `CORS_ALLOWED_ORIGINS`.
+8. Configurar en el repositorio de GitHub los secretos `ADS_API_URL` y
+   `REMINDERS_TOKEN` para que el flujo `.github/workflows/reminders.yml` envíe los
+   recordatorios cada 30 minutos. GitHub solo ejecuta flujos programados desde la
+   rama por defecto.
 
-### Estados de Verificación de Trabajador
+El plan gratuito de Render suspende el servicio sin tráfico; la primera
+petición posterior tarda unos segundos.
 
-- `documents_submitted`: Trabajador ha enviado documentos
-- `approved`: Trabajador verificado y aprobado
-- `rejected`: Trabajador rechazado
+## Seguridad
 
-## Solución de Problemas
+- Autenticación obligatoria en todas las rutas salvo las indicadas como públicas.
+- Contraseñas del panel almacenadas con el hasher PBKDF2 de Django.
+- Tokens JWT con vencimiento corto, rotación y lista negra.
+- Verificación del ID token de Firebase en cada petición de la aplicación móvil y
+  control de participante por solicitud.
+- Documentos de los trabajadores servidos mediante URL firmadas de Firebase Storage.
+- Registro de auditoría de cada decisión de verificación y de cada cambio de
+  catálogo, configuración o estado de cuenta.
+- Límites de peticiones por ámbito, incluido el inicio de sesión.
+- En producción: HTTPS obligatorio, cookies seguras, HSTS y bloqueo de la
+  pasarela simulada.
+- Ningún secreto se versiona: `.env`, claves de Firebase y llaves de Wompi se
+  entregan como variables de entorno o archivos secretos.
 
-### Error: Firebase no inicializa
+## Contribución
 
-**Solución**: Verificar que `firebase-credentials.json` existe y tiene las credenciales correctas.
+1. Crear una rama a partir de `develop`: `feature/<nombre-corto>` para
+   funcionalidades o `fix/<nombre-corto>` para correcciones.
+2. Hacer commits con el formato [Conventional Commits](https://www.conventionalcommits.org/es/):
 
-### Error: CORS
+   ```
+   <tipo>(<alcance>): <descripción>
+   ```
 
-**Solución**: Agregar el origen en `CORS_ALLOWED_ORIGINS` en `.env`
+   Tipos: `feat`, `fix`, `refactor`, `perf`, `docs`, `style`, `test`, `build`,
+   `ci`, `chore`, `revert`. Alcances habituales: `workers`, `documents`,
+   `clients`, `dashboard`, `auth`, `payments`, `pricing`, `pqr`, `accounts`,
+   `notifications`, `firebase`, `settings`.
 
-### Error: Token inválido
-
-**Solución**: Refrescar el token usando `/api/auth/token/refresh/`
+3. Ejecutar las pruebas antes de abrir el Pull Request hacia `develop`.
+4. La rama `main` se reserva para versiones publicadas.
 
 ## Licencia
 
-Este proyecto es privado y confidencial.
-
-## Contribuir
-
-1. Fork el proyecto
-2. Crear rama de feature (`git checkout -b feature/AmazingFeature`)
-3. Commit cambios siguiendo la [convención de commits](#convención-de-commits)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abrir Pull Request
-
-### Convención de Commits
-
-Este proyecto sigue [Conventional Commits](https://www.conventionalcommits.org/es/). El mensaje debe tener el formato:
-
-```
-<tipo>(<scope>): <descripción corta>
-
-[cuerpo opcional]
-
-[footer opcional]
-```
-
-#### Tipos
-
-| Tipo       | Uso                                                                 |
-|------------|----------------------------------------------------------------------|
-| `feat`     | Nueva funcionalidad                                                  |
-| `fix`      | Corrección de un bug                                                 |
-| `refactor` | Cambio de código que no arregla un bug ni agrega funcionalidad       |
-| `perf`     | Cambio que mejora el rendimiento                                     |
-| `docs`     | Cambios solo de documentación (README, comentarios, etc.)            |
-| `style`    | Cambios de formato (espacios, comas, etc.) sin afectar la lógica     |
-| `test`     | Agregar o corregir tests                                             |
-| `build`    | Cambios en dependencias o sistema de build (`requirements.txt`, etc.)|
-| `ci`       | Cambios en configuración de integración continua                    |
-| `chore`    | Tareas de mantenimiento que no afectan `src` ni tests                |
-| `revert`   | Revierte un commit anterior                                          |
-
-#### Scopes usados en este proyecto
-
-Corresponden a los módulos de `worker_verification/`:
-
-- `workers` — trabajadores
-- `documents` — documentos y verificación
-- `clients` — clientes
-- `dashboard` — estadísticas y dashboard
-- `auth` — autenticación/JWT
-- `settings` — configuración del proyecto (`admin_panel/settings.py`, `urls.py`)
-- `firebase` — integración con Firebase (Realtime Database / Storage)
-
-#### Reglas
-
-- Descripción corta en modo imperativo, sin punto final: `add`, `fix`, `update` (no `added`, `fixed`).
-- Máximo ~72 caracteres en la primera línea.
-- Un commit = un cambio lógico coherente.
-- Si el cambio rompe compatibilidad, agregar `!` después del scope (`feat(auth)!: ...`) y describir el impacto en el footer con `BREAKING CHANGE:`.
-
-#### Ejemplos
-
-```
-feat(settings): add project-level URL routing with JWT and worker_verification
-fix(documents): validate file size before upload to Firebase Storage
-docs(readme): document verification status endpoint
-refactor(workers): extract availability logic into WorkerService
-chore(build): bump djangorestframework-simplejwt to 5.3
-```
-
-## Contacto
-
-Para soporte o consultas, contactar al equipo de desarrollo.
-
----
-
-**Última actualización**: Octubre 2025
-**Versión**: 1.0.0
+Proyecto privado desarrollado como trabajo de grado en la Universidad de
+Cundinamarca. Todos los derechos reservados.

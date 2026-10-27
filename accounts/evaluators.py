@@ -57,12 +57,14 @@ def access_expired(today=None):
 
 
 class PanelTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Login del panel: agrega el rol al token y cierra el acceso de evaluación vencido."""
+    """Login del panel: agrega el nombre y el rol al token y cierra el acceso de evaluación vencido."""
 
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
         token['username'] = user.get_username()
+        # Nombre que muestra el encabezado del panel: el nombre completo si la cuenta lo tiene
+        token['name'] = user.get_full_name() or user.get_username()
         token['role'] = 'evaluador' if is_evaluator(user) else 'admin'
         if is_evaluator(user):
             token['access_until'] = settings.EVALUATOR_ACCESS_UNTIL

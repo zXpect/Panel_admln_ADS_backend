@@ -63,6 +63,16 @@ class EvaluatorRoleTests(TestCase):
         self.assertEqual(AccessToken(evaluator.data['access'])['access_until'], '2026-11-28')
         self.assertEqual(AccessToken(admin.data['access'])['role'], 'admin')
 
+    def test_login_token_carries_display_name(self):
+        self.evaluator.first_name, self.evaluator.last_name = 'Jurado', 'Uno'
+        self.evaluator.save()
+        api = APIClient()
+        evaluator = api.post('/api/auth/token/', {'username': 'jurado1', 'password': 'clave-jurado'})
+        admin = api.post('/api/auth/token/', {'username': 'admin.ads', 'password': 'clave-admin'})
+        self.assertEqual(AccessToken(evaluator.data['access'])['name'], 'Jurado Uno')
+        # Sin nombre completo se muestra el usuario
+        self.assertEqual(AccessToken(admin.data['access'])['name'], 'admin.ads')
+
     @override_settings(EVALUATOR_ACCESS_UNTIL='2020-01-01')
     def test_expired_access_blocks_login_and_reads(self):
         login = APIClient().post('/api/auth/token/', {'username': 'jurado1', 'password': 'clave-jurado'})

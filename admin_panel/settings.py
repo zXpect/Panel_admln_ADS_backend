@@ -51,6 +51,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Rol de evaluador (jurados): solo lectura y acciones de revisión (accounts/evaluators.py)
+    'accounts.evaluators.EvaluatorGuardMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -221,6 +223,10 @@ FIREBASE_CONFIG = {
 # Secreto que comparte el programador externo (GitHub Actions) para llamar
 # POST /api/internal/reminders/. Vacío: la ruta responde 404.
 REMINDERS_TOKEN = config('REMINDERS_TOKEN', default='')
+
+# Último día (AAAA-MM-DD) en que las cuentas de evaluador (jurados) pueden entrar al panel;
+# después la API las rechaza. Ver accounts/evaluators.py y `manage.py evaluadores`.
+EVALUATOR_ACCESS_UNTIL = config('EVALUATOR_ACCESS_UNTIL', default='2026-11-28')
 
 # ==================== PAYMENTS SETTINGS ====================
 DJANGO_ENV = config('DJANGO_ENV', default='development')

@@ -22,11 +22,13 @@ from django.conf.urls.static import static
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from accounts.evaluators import PanelTokenObtainPairSerializer
 from payments.views.reminder_views import RemindersRunView
 
 
 class PanelLoginView(TokenObtainPairView):
-    """Login del panel con límite de intentos por IP (10 por minuto)."""
+    """Login del panel con límite de intentos por IP (10 por minuto); el token lleva el rol."""
+    serializer_class = PanelTokenObtainPairSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'panel_login'
 

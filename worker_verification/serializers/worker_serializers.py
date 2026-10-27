@@ -74,6 +74,8 @@ class WorkerSerializer(serializers.Serializer):
     totalRatings = serializers.IntegerField(required=False, default=0)
     experience = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     timestamp = serializers.IntegerField(required=False, allow_null=True)
+    # Creación de la cuenta en Firebase Auth (services/auth_dates.py), para ordenar en el panel
+    createdAt = serializers.IntegerField(required=False, allow_null=True)
     # Cuenta habilitada (HU-32); sin el campo cuenta como activa. Solo lectura:
     # se cambia con PATCH /api/admin/accounts/{uid}/status/
     isActive = serializers.SerializerMethodField()

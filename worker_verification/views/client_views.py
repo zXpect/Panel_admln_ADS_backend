@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
 from ..services.client_service import client_service
+from ..services.auth_dates import attach_created_at
 from ..serializers import ClientSerializer, ClientListSerializer
 import logging
 
@@ -34,7 +35,7 @@ class ClientViewSet(viewsets.ViewSet):
             else:
                 clients = client_service.get_all_clients()
             
-            serializer = ClientListSerializer(clients, many=True)
+            serializer = ClientListSerializer(attach_created_at(clients), many=True)
             
             return Response({
                 'success': True,

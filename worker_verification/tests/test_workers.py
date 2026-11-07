@@ -61,6 +61,14 @@ class WorkerQueryTests(PanelTestCase):
         # Sin oficios ni verificación: lista vacía y null
         self.assertEqual((workers[CARO]['categories'], workers[CARO]['verificationStatus']), ([], None))
 
+    def test_list_includes_auth_creation_date(self):
+        # También con búsqueda; sin cuenta en Auth queda null
+        for params in ({}, {'search': 'a'}):
+            with self.subTest(params=params):
+                workers = {w['id']: w['createdAt'] for w in self.client.get(WORKERS, params).json()['data']}
+                self.assertEqual(workers[ANA], 3_000)
+                self.assertIsNone(workers.get(CARO))
+
     def test_statistics(self):
         data = self.client.get(f'{WORKERS}statistics/').json()['data']
         self.assertEqual((data['total'], data['available'], data['online']), (3, 2, 1))

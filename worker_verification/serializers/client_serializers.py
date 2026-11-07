@@ -14,6 +14,8 @@ class ClientSerializer(serializers.Serializer):
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     image = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     timestamp = serializers.IntegerField(required=False)
+    # Creación de la cuenta en Firebase Auth (services/auth_dates.py)
+    createdAt = serializers.IntegerField(required=False, allow_null=True)
     isActive = serializers.SerializerMethodField()
 
     def get_isActive(self, client):
@@ -32,6 +34,7 @@ class ClientListSerializer(serializers.Serializer):
     # Para la tabla del panel
     phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     timestamp = serializers.IntegerField(required=False, allow_null=True)
+    createdAt = serializers.IntegerField(required=False, allow_null=True)
     isActive = serializers.SerializerMethodField()
 
     def get_isActive(self, client):

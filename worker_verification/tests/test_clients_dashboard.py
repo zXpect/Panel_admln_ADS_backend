@@ -24,6 +24,15 @@ class ClientTests(PanelTestCase):
         self.assertEqual(listed[CLIENT]['phone'], '3109998877')
         self.assertTrue(listed[CLIENT]['isActive'])
 
+    def test_list_includes_auth_creation_date(self):
+        listed = {c['id']: c['createdAt'] for c in self.client.get(CLIENTS).json()['data']}
+        self.assertEqual(listed, {CLIENT: 1_000, 'client-2': 2_000})
+
+    def test_list_works_without_auth_dates(self):
+        self.auth_times = {}
+        listed = self.client.get(CLIENTS).json()['data']
+        self.assertEqual({c['createdAt'] for c in listed}, {None})
+
     def test_without_clients(self):
         self.fb.set_data('User/Clientes', None)
         self.assertEqual(self.client.get(CLIENTS).json()['count'], 0)

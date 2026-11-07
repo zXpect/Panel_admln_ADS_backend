@@ -92,6 +92,11 @@ class PanelTestCase(TestCase):
 
         self.fb = FakeFirebase(initial_data())
         self.fb.get_file_url = mock.Mock(return_value='https://storage.test/firmada')
+        # Fechas de creación de Auth: Carla antes que Pedro; los trabajadores sin cuenta en Auth
+        self.auth_times = {CLIENT: 1_000, 'client-2': 2_000, ANA: 3_000}
+        patcher = mock.patch('worker_verification.services.auth_dates.creation_times', side_effect=lambda: self.auth_times)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         for service in (document_service, worker_service, client_service, dashboard_service, bulk_worker_service):
             patcher = mock.patch.object(service, 'firebase', self.fb)
             patcher.start()

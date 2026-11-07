@@ -286,6 +286,28 @@ Content-Type: application/json
 }
 ```
 
+### Rol de evaluador (jurados)
+
+Las cuentas del panel en el grupo `evaluadores` pueden ver todo el panel y hacer las acciones de
+revisión, pero no las que borran o cambian la configuración. El token del panel lleva el claim
+`role` (`admin` o `evaluador`), y para los evaluadores también `access_until`.
+
+| Permitido | Bloqueado (403, `code: evaluator_forbidden`) |
+|---|---|
+| Todas las lecturas (`GET`) | Crear, editar o eliminar trabajadores |
+| `POST /api/documents/approve/` y `/reject/` | Subir o eliminar documentos |
+| `PATCH /api/workers/{id}/verification_status/` | Carga masiva (`/api/workers/bulk-upload/`) |
+| `PATCH /api/pqr/{id}/` (responder) | Catálogo, tarifas y configuración (`/api/admin/catalog/...`, `/api/admin/config/...`) |
+| `PATCH /api/admin/accounts/{uid}/status/` | Cualquier otra escritura (lista de permitidos) |
+
+El control está en `accounts/evaluators.py` (`EvaluatorGuardMiddleware`), antes de las vistas, para
+que ninguna vista con permisos propios se lo salte. Un endpoint nuevo queda bloqueado para los
+evaluadores hasta que se agregue a `EVALUATOR_ALLOWED`. Después de `EVALUATOR_ACCESS_UNTIL`
+(por defecto `2026-11-28`) los evaluadores no pueden iniciar sesión y la API rechaza sus tokens.
+
+Las cuentas se gestionan con `python manage.py evaluadores` (ver [Comandos de gestión](#comandos-de-gestión)).
+Las contraseñas se generan al azar y solo se muestran una vez.
+
 ## Referencia de la API
 
 Todas las rutas comienzan con `/api/`. La columna "Acceso" indica quién puede
@@ -631,7 +653,11 @@ coverage report
 | `python manage.py send_reminders` | Envía los recordatorios pendientes |
 | `python manage.py mock_payment <request_id> <monto_cop>` | Simula un pago con la pasarela de desarrollo |
 | `python manage.py migrate_worker_categories` | Migra el oficio único de los trabajadores al campo de oficios múltiples |
-| `python manage.py createsuperuser` | Crea un usuario del panel |
+| `python manage.py createsuperuser` | Crea un usuario del panel (administrador con acceso total) |
+| `python manage.py evaluadores crear jurado1 jurado2 --nombre "Nombre 1" --nombre "Nombre 2"` | Crea cuentas de evaluador y muestra sus contraseñas una sola vez |
+| `python manage.py evaluadores restablecer jurado1` | Genera otra contraseña para un evaluador (y lo reactiva) |
+| `python manage.py evaluadores listar` | Lista los evaluadores, su estado y su último ingreso |
+| `python manage.py evaluadores desactivar` | Desactiva todas las cuentas de evaluador (sin borrarlas, para conservar su bitácora) |
 
 ## Despliegue
 

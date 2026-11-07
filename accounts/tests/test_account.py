@@ -60,6 +60,18 @@ class DeleteAccountTests(AppApiTestCase):
         # La solicitud de otro cliente no se toca
         self.assertEqual(self.fb.get_data('requests/req-3')['client_name'], 'Pedro')
 
+    def test_admin_deletion_pushes_notice_before_removing_token(self):
+        account_service.delete_account(CLIENT, deleted_by=account_service.DELETED_BY_ADMIN)
+
+        self.assertIn(('fcm-client', 'account_deleted'), self.sent_notifications())
+        message = [c.args[0] for c in self.fcm_send.call_args_list if c.args[0].data['type'] == 'account_deleted'][0]
+        self.assertIn('adsteamsp@gmail.com', message.data['body'])
+        self.assertIsNone(self.fb.get_data(f"Tokens/{CLIENT}"))
+
+    def test_own_deletion_does_not_push_notice(self):
+        self.delete()
+        self.assertNotIn(('fcm-client', 'account_deleted'), self.sent_notifications())
+
     def test_worker_account_deletes_documents_and_location(self):
         self.fb.set_data(f"User/Trabajadores/{WORKER}", {'name': 'Ana'})
         self.fb.set_data(f"active_workers/{WORKER}", {'g': 'x'})

@@ -8,6 +8,7 @@ from accounts.services.account_service import account_service
 from payments.services.service_request_service import ServiceRequestError
 from pricing.models import ConfigAuditLog
 from ..services.worker_service import worker_service
+from ..services.auth_dates import attach_created_at
 from ..services.audit_service import audit_service
 from ..serializers import (
     WorkerSerializer,
@@ -70,7 +71,7 @@ class WorkerViewSet(viewsets.ViewSet):
             else:
                 workers = worker_service.get_all_workers()
             
-            serializer = WorkerSerializer(workers, many=True)
+            serializer = WorkerSerializer(attach_created_at(workers), many=True)
             
             return Response({
                 'success': True,

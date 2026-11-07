@@ -45,6 +45,15 @@ class AccountService:
     DELETED_PATH = 'deleted_accounts'
     DELETED_BY_USER = 'user'
     DELETED_BY_ADMIN = 'admin'
+    # Push al teléfono cuando el panel elimina o suspende la cuenta, por si la app
+    # está cerrada o en segundo plano. No se guarda en el historial: la cuenta se cierra.
+    SUPPORT_EMAIL = 'adsteamsp@gmail.com'
+    ACCOUNT_PUSH = {
+        'account_deleted': ('Tu cuenta fue eliminada',
+                            'El equipo de ADS eliminó tu cuenta. Si crees que es un error, escríbenos a {email}.'),
+        'account_suspended': ('Tu cuenta fue suspendida',
+                              'El equipo de ADS suspendió tu cuenta. Si crees que es un error, escríbenos a {email}.'),
+    }
 
     def __init__(self):
         self.firebase = firebase_service
@@ -82,6 +91,13 @@ class AccountService:
             if cancelled:
                 # Se avisa a la otra parte (con el nombre ya anonimizado si aplica)
                 self.notifications.notify('request_cancelled', request_id, {**request, **updates})
+
+    def _push_account_notice(self, uid, notice_type):
+        """Aviso push de cuenta eliminada o suspendida; de mejor esfuerzo, como los demás."""
+        title, body = self.ACCOUNT_PUSH[notice_type]
+        self.notifications.send_to_user(uid, {
+            'type': notice_type, 'title': title, 'body': body.format(email=self.SUPPORT_EMAIL),
+        })
 
     def find_profile(self, uid):
         """(rol, ruta, perfil) del usuario en User/Clientes o User/Trabajadores, o (None, None, None)."""
@@ -135,6 +151,8 @@ class AccountService:
 
         if not active:
             self._close_requests(requests, self.SUSPENDED_REASON, anonymize=False)
+            if was_active:
+                self._push_account_notice(uid, 'account_suspended')
         logger.info(f"Account {uid} ({role}) {'reactivated' if active else 'suspended'}")
         return role, was_active
 
@@ -152,6 +170,9 @@ class AccountService:
 
         self._close_requests(requests, 'Cuenta eliminada', anonymize=True)
         email = self._email_of(uid)
+        if deleted_by == self.DELETED_BY_ADMIN:
+            # Antes de borrar Tokens/<uid>, que tiene el token FCM del teléfono
+            self._push_account_notice(uid, 'account_deleted')
 
         for template in self.PROFILE_PATHS + self.SESSION_PATHS:
             self.firebase.delete_data(template.format(uid=uid))

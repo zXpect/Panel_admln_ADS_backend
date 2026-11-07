@@ -63,6 +63,14 @@ class AccountStatusTests(AppApiTestCase):
         self.assertEqual(log.old_value, {'is_active': True})
         self.assertEqual(log.new_value, {'is_active': False, 'role': 'worker', 'reason': 'Incumplió los términos'})
 
+    def test_suspension_pushes_notice_once(self):
+        self.change(CLIENT, False)
+        self.change(CLIENT, False)
+        sent = self.sent_notifications()
+        self.assertEqual(sent.count(('fcm-client', 'account_suspended')), 1)
+        self.change(CLIENT, True)
+        self.assertEqual(self.sent_notifications().count(('fcm-client', 'account_suspended')), 1)
+
     def test_reactivate_client(self):
         self.fb.update_data(f"User/Clientes/{CLIENT}", {'isActive': False})
 
